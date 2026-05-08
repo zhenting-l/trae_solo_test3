@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.shareimport
+package com.lzt.summaryofslides.ui.shareimport
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -30,8 +30,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.data.db.EntryEntity
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.data.db.EntryEntity
+import com.lzt.summaryofslides.data.repo.EntryRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -48,7 +49,7 @@ class ShareImportViewModel : ViewModel() {
             val entryId = repo.createEntryAutoTitle()
             runCatching { repo.importSharedUris(entryId, payload.uris) }
                 .onSuccess { onDone(entryId) }
-                .onFailure { onError(it.message ?: com.example.academicreportassistant.data.repo.EntryRepository.PdfLimitMessage) }
+                .onFailure { onError(it.message ?: EntryRepository.PdfLimitMessage) }
         }
     }
 
@@ -56,7 +57,7 @@ class ShareImportViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching { repo.importSharedUris(entryId, payload.uris) }
                 .onSuccess { onDone(entryId) }
-                .onFailure { onError(it.message ?: com.example.academicreportassistant.data.repo.EntryRepository.PdfLimitMessage) }
+                .onFailure { onError(it.message ?: EntryRepository.PdfLimitMessage) }
         }
     }
 }

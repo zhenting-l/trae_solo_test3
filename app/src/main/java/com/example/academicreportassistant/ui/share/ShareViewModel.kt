@@ -1,15 +1,15 @@
-package com.example.academicreportassistant.ui.share
+package com.lzt.summaryofslides.ui.share
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.data.db.EntryEntity
-import com.example.academicreportassistant.data.db.EntryImageEntity
-import com.example.academicreportassistant.data.db.EntryPdfEntity
-import com.example.academicreportassistant.util.ShareUtil
-import com.example.academicreportassistant.util.ZipUtil
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.data.db.EntryEntity
+import com.lzt.summaryofslides.data.db.EntryImageEntity
+import com.lzt.summaryofslides.data.db.EntryPdfEntity
+import com.lzt.summaryofslides.util.ShareUtil
+import com.lzt.summaryofslides.util.ZipUtil
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn

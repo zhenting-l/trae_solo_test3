@@ -1,14 +1,14 @@
-package com.example.academicreportassistant.data.repo
+package com.lzt.summaryofslides.data.repo
 
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import com.example.academicreportassistant.data.db.AppDatabase
-import com.example.academicreportassistant.data.db.EntryEntity
-import com.example.academicreportassistant.data.db.EntryImageEntity
-import com.example.academicreportassistant.data.db.EntryPdfEntity
-import com.example.academicreportassistant.data.db.EntrySummaryEntity
-import com.example.academicreportassistant.data.db.SlideAnalysisEntity
+import com.lzt.summaryofslides.data.db.AppDatabase
+import com.lzt.summaryofslides.data.db.EntryEntity
+import com.lzt.summaryofslides.data.db.EntryImageEntity
+import com.lzt.summaryofslides.data.db.EntryPdfEntity
+import com.lzt.summaryofslides.data.db.EntrySummaryEntity
+import com.lzt.summaryofslides.data.db.SlideAnalysisEntity
 import kotlinx.coroutines.flow.Flow
 import java.io.File
 import java.io.FileInputStream
@@ -21,6 +21,7 @@ class EntryRepository(
     companion object {
         const val MaxPdfsPerEntry = 3
         const val PdfLimitMessage = "当前条目PDF文件过多，请新建条目后导入"
+        const val MaxEntryTitleChars = 24
     }
 
     fun observeEntries(): Flow<List<EntryEntity>> = db.entryDao().observeAll()
@@ -199,12 +200,19 @@ class EntryRepository(
         val entry = requireNotNull(db.entryDao().getById(entryId))
         val now = System.currentTimeMillis()
         val summaryId = UUID.randomUUID().toString()
+        val renamedTitle =
+            normalizeEntryTitle(
+                shortTitle?.takeIf { it.isNotBlank() }
+                    ?: talkTitle?.takeIf { it.isNotBlank() }
+                    ?: entry.title?.takeIf { it.isNotBlank() }
+                    ?: "",
+            ).ifBlank { entry.title ?: "未命名条目" }
         db.entrySummaryDao().upsert(
             EntrySummaryEntity(
                 id = summaryId,
                 entryId = entryId,
                 createdAtEpochMs = now,
-                shortTitle = shortTitle,
+                shortTitle = renamedTitle,
                 talkTitle = talkTitle,
                 speakerName = speakerName,
                 speakerAffiliation = speakerAffiliation,
@@ -215,7 +223,8 @@ class EntryRepository(
         )
         db.entryDao().upsert(
             entry.copy(
-                shortTitle = shortTitle,
+                title = renamedTitle,
+                shortTitle = renamedTitle,
                 speakerName = speakerName,
                 speakerAffiliation = speakerAffiliation,
                 talkTitle = talkTitle,
@@ -231,6 +240,12 @@ class EntryRepository(
                 updatedAtEpochMs = now,
             ),
         )
+    }
+
+    private fun normalizeEntryTitle(raw: String): String {
+        val cleaned = raw.trim().replace(Regex("""\s+"""), " ")
+        if (cleaned.length <= MaxEntryTitleChars) return cleaned
+        return cleaned.take((MaxEntryTitleChars - 1).coerceAtLeast(1)) + "…"
     }
 
     suspend fun importSlidesPdfFromUri(entryId: String, sourceUri: Uri): String {

@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import android.content.Context
 import android.content.Intent
@@ -21,4 +21,3 @@ object ShareUtil {
         shareSingleFile(context, zipFile, "application/zip")
     }
 }
-

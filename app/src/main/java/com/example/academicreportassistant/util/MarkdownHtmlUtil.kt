@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.HtmlRenderer
@@ -11,4 +11,3 @@ object MarkdownHtmlUtil {
         return renderer.render(parser.parse(markdown))
     }
 }
-

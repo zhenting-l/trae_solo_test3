@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui
+package com.lzt.summaryofslides.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,18 +9,18 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.academicreportassistant.ui.entrydetail.EntryDetailScreen
-import com.example.academicreportassistant.ui.entrylist.EntryListScreen
-import com.example.academicreportassistant.ui.intermediate.IntermediateScreen
-import com.example.academicreportassistant.ui.summary.SummaryDetailScreen
-import com.example.academicreportassistant.ui.summary.SummaryHistoryScreen
-import com.example.academicreportassistant.ui.summary.SummaryScreen
-import com.example.academicreportassistant.ui.share.ShareScreen
-import com.example.academicreportassistant.ui.shareimport.ShareImportScreen
-import com.example.academicreportassistant.ui.shareimport.SharePayloadHolder
-import com.example.academicreportassistant.ui.settings.AboutScreen
-import com.example.academicreportassistant.ui.settings.SettingsHomeScreen
-import com.example.academicreportassistant.ui.settings.SettingsScreen
+import com.lzt.summaryofslides.ui.entrydetail.EntryDetailScreen
+import com.lzt.summaryofslides.ui.entrylist.EntryListScreen
+import com.lzt.summaryofslides.ui.intermediate.IntermediateScreen
+import com.lzt.summaryofslides.ui.share.ShareScreen
+import com.lzt.summaryofslides.ui.shareimport.ShareImportScreen
+import com.lzt.summaryofslides.ui.shareimport.SharePayloadHolder
+import com.lzt.summaryofslides.ui.settings.AboutScreen
+import com.lzt.summaryofslides.ui.settings.SettingsHomeScreen
+import com.lzt.summaryofslides.ui.settings.SettingsScreen
+import com.lzt.summaryofslides.ui.summary.SummaryDetailScreen
+import com.lzt.summaryofslides.ui.summary.SummaryHistoryScreen
+import com.lzt.summaryofslides.ui.summary.SummaryScreen
 
 object Routes {
     const val EntryList = "entry_list"

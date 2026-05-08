@@ -1,12 +1,12 @@
-package com.example.academicreportassistant.data
+package com.lzt.summaryofslides.data
 
 import android.content.Context
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.example.academicreportassistant.data.db.AppDatabase
-import com.example.academicreportassistant.data.repo.EntryRepository
-import com.example.academicreportassistant.settings.SettingsStore
+import com.lzt.summaryofslides.data.db.AppDatabase
+import com.lzt.summaryofslides.data.repo.EntryRepository
+import com.lzt.summaryofslides.settings.SettingsStore
 
 object AppContainer {
     lateinit var appContext: Context
@@ -95,7 +95,21 @@ object AppContainer {
     private val MIGRATION_5_6 =
         object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE entry_pdfs ADD COLUMN displayName TEXT")
+                val hasDisplayNameColumn =
+                    db.query("PRAGMA table_info(entry_pdfs)").use { cursor ->
+                        val nameIndex = cursor.getColumnIndex("name")
+                        var found = false
+                        while (cursor.moveToNext()) {
+                            if (cursor.getString(nameIndex) == "displayName") {
+                                found = true
+                                break
+                            }
+                        }
+                        found
+                    }
+                if (!hasDisplayNameColumn) {
+                    db.execSQL("ALTER TABLE entry_pdfs ADD COLUMN displayName TEXT")
+                }
             }
         }
 

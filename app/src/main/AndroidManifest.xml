@@ -12,7 +12,7 @@
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AcademicReportAssistant">
+        android:theme="@style/Theme.SummaryOfSlides">
         <activity
             android:name=".MainActivity"
             android:launchMode="singleTask"

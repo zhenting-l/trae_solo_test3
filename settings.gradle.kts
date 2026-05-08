@@ -14,6 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AcademicReportAssistant"
+rootProject.name = "SummaryOfSlides"
 include(":app")
-

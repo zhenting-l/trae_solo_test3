@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.summary
+package com.lzt.summaryofslides.ui.summary
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -27,9 +27,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.data.db.EntrySummaryEntity
-import com.example.academicreportassistant.util.openPdf
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.data.db.EntrySummaryEntity
+import com.lzt.summaryofslides.util.openPdf
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn

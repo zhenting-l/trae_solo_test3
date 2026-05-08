@@ -1,6 +1,7 @@
-package com.example.academicreportassistant.llm
+package com.lzt.summaryofslides.llm
 
 import android.util.Base64
+import android.util.Base64OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -16,6 +17,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
 import java.util.concurrent.TimeUnit
 
 class OpenAiCompatClient(
@@ -36,6 +40,46 @@ class OpenAiCompatClient(
     ): String {
         val b64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
         val dataUrl = "data:image/jpeg;base64,$b64"
+        return visionChatCompletionWithDataUrls(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            model = model,
+            prompt = prompt,
+            dataUrls = listOf(dataUrl),
+        )
+    }
+
+    suspend fun visionChatCompletionWithPdfFiles(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        prompt: String,
+        pdfFiles: List<File>,
+    ): String {
+        val maxBytes = 15L * 1024L * 1024L
+        val urls =
+            pdfFiles.map { file ->
+                if (!file.exists()) throw IllegalStateException("PDF不存在：${file.name}")
+                if (file.length() > maxBytes) throw IllegalStateException("PDF过大：${file.name}")
+                val b64 = encodeBase64NoWrap(file)
+                "data:application/pdf;base64,$b64"
+            }
+        return visionChatCompletionWithDataUrls(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            model = model,
+            prompt = prompt,
+            dataUrls = urls,
+        )
+    }
+
+    private suspend fun visionChatCompletionWithDataUrls(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        prompt: String,
+        dataUrls: List<String>,
+    ): String {
         val body = buildChatCompletionBody(
             model = model,
             messages = buildJsonArray {
@@ -51,15 +95,17 @@ class OpenAiCompatClient(
                                         put("text", JsonPrimitive(prompt))
                                     },
                                 )
-                                add(
-                                    buildJsonObject {
-                                        put("type", JsonPrimitive("image_url"))
-                                        put(
-                                            "image_url",
-                                            buildJsonObject { put("url", JsonPrimitive(dataUrl)) },
-                                        )
-                                    },
-                                )
+                                for (url in dataUrls) {
+                                    add(
+                                        buildJsonObject {
+                                            put("type", JsonPrimitive("image_url"))
+                                            put(
+                                                "image_url",
+                                                buildJsonObject { put("url", JsonPrimitive(url)) },
+                                            )
+                                        },
+                                    )
+                                }
                             },
                         )
                     },
@@ -87,6 +133,18 @@ class OpenAiCompatClient(
             },
         )
         return postForAssistantText(baseUrl, apiKey, body)
+    }
+
+    private suspend fun encodeBase64NoWrap(file: File): String {
+        return withContext(Dispatchers.IO) {
+            val baos = ByteArrayOutputStream()
+            Base64OutputStream(baos, Base64.NO_WRAP).use { b64 ->
+                FileInputStream(file).use { input ->
+                    input.copyTo(b64)
+                }
+            }
+            baos.toString(Charsets.UTF_8.name())
+        }
     }
 
     private fun buildChatCompletionBody(model: String, messages: JsonArray): JsonObject {

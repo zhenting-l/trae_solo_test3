@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.llm
+package com.lzt.summaryofslides.llm
 
 import android.util.Base64
 import android.util.Base64OutputStream

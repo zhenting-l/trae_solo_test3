@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.settings
+package com.lzt.summaryofslides.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
@@ -14,6 +14,7 @@ data class ModelSettings(
     val providerPreset: ModelProviderPreset,
     val baseUrl: String,
     val apiKey: String,
+    val generalModel: String,
     val visionModel: String,
     val textModel: String,
 )
@@ -23,6 +24,7 @@ class SettingsStore(private val context: Context) {
         val providerPreset = stringPreferencesKey("provider_preset")
         val baseUrl = stringPreferencesKey("base_url")
         val apiKey = stringPreferencesKey("api_key")
+        val generalModel = stringPreferencesKey("general_model")
         val visionModel = stringPreferencesKey("vision_model")
         val textModel = stringPreferencesKey("text_model")
     }
@@ -35,6 +37,7 @@ class SettingsStore(private val context: Context) {
             providerPreset = preset,
             baseUrl = prefs[Keys.baseUrl] ?: preset.defaultBaseUrl,
             apiKey = prefs[Keys.apiKey] ?: "",
+            generalModel = prefs[Keys.generalModel] ?: preset.defaultGeneralModel,
             visionModel = prefs[Keys.visionModel] ?: preset.defaultVisionModel,
             textModel = prefs[Keys.textModel] ?: preset.defaultTextModel,
         )
@@ -44,6 +47,7 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[Keys.providerPreset] = preset.name
             prefs[Keys.baseUrl] = preset.defaultBaseUrl
+            prefs[Keys.generalModel] = preset.defaultGeneralModel
             prefs[Keys.visionModel] = preset.defaultVisionModel
             prefs[Keys.textModel] = preset.defaultTextModel
         }
@@ -52,15 +56,16 @@ class SettingsStore(private val context: Context) {
     suspend fun update(
         baseUrl: String? = null,
         apiKey: String? = null,
+        generalModel: String? = null,
         visionModel: String? = null,
         textModel: String? = null,
     ) {
         context.dataStore.edit { prefs ->
             if (baseUrl != null) prefs[Keys.baseUrl] = baseUrl
             if (apiKey != null) prefs[Keys.apiKey] = apiKey
+            if (generalModel != null) prefs[Keys.generalModel] = generalModel
             if (visionModel != null) prefs[Keys.visionModel] = visionModel
             if (textModel != null) prefs[Keys.textModel] = textModel
         }
     }
 }
-

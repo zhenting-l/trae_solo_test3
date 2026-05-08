@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.academicreportassistant"
+    namespace = "com.lzt.summaryofslides"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.academicreportassistant"
+        applicationId = "com.lzt.summaryofslides"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

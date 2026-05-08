@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.intermediate
+package com.lzt.summaryofslides.ui.intermediate
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,10 +20,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.data.db.EntryEntity
-import com.example.academicreportassistant.data.db.EntryImageEntity
-import com.example.academicreportassistant.data.db.SlideAnalysisEntity
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.data.db.EntryEntity
+import com.lzt.summaryofslides.data.db.EntryImageEntity
+import com.lzt.summaryofslides.data.db.SlideAnalysisEntity
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -142,4 +142,3 @@ private fun parsePreview(json: Json, raw: String?): SlidePreview {
 private fun kotlinx.serialization.json.JsonPrimitive.contentOrNull(): String? {
     return runCatching { content }.getOrNull()
 }
-

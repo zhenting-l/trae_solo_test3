@@ -1,10 +1,10 @@
-package com.example.academicreportassistant.ui.settings
+package com.lzt.summaryofslides.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.settings.ModelProviderPreset
-import com.example.academicreportassistant.settings.ModelSettings
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.settings.ModelProviderPreset
+import com.lzt.summaryofslides.settings.ModelSettings
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -21,6 +21,7 @@ class SettingsViewModel : ViewModel() {
                 providerPreset = ModelProviderPreset.ZhiPu,
                 baseUrl = ModelProviderPreset.ZhiPu.defaultBaseUrl,
                 apiKey = "",
+                generalModel = ModelProviderPreset.ZhiPu.defaultGeneralModel,
                 visionModel = ModelProviderPreset.ZhiPu.defaultVisionModel,
                 textModel = ModelProviderPreset.ZhiPu.defaultTextModel,
             ),
@@ -33,6 +34,7 @@ class SettingsViewModel : ViewModel() {
     fun save(
         baseUrl: String,
         apiKey: String,
+        generalModel: String,
         visionModel: String,
         textModel: String,
     ) {
@@ -40,10 +42,10 @@ class SettingsViewModel : ViewModel() {
             store.update(
                 baseUrl = baseUrl,
                 apiKey = apiKey,
+                generalModel = generalModel,
                 visionModel = visionModel,
                 textModel = textModel,
             )
         }
     }
 }
-

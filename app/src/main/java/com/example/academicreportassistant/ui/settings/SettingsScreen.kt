@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.settings
+package com.lzt.summaryofslides.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.academicreportassistant.settings.ModelProviderPreset
+import com.lzt.summaryofslides.settings.ModelProviderPreset
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,12 +40,14 @@ fun SettingsScreen(onBack: () -> Unit) {
     var providerExpanded by remember { mutableStateOf(false) }
     var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
+    var generalModel by remember { mutableStateOf("") }
     var visionModel by remember { mutableStateOf("") }
     var textModel by remember { mutableStateOf("") }
 
     LaunchedEffect(settings.value) {
         baseUrl = settings.value.baseUrl
         apiKey = settings.value.apiKey
+        generalModel = settings.value.generalModel
         visionModel = settings.value.visionModel
         textModel = settings.value.textModel
     }
@@ -122,6 +124,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                         singleLine = true,
                     )
                     TextField(
+                        value = generalModel,
+                        onValueChange = { generalModel = it },
+                        label = { Text("通用模型（图片+PDF）") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    TextField(
                         value = textModel,
                         onValueChange = { textModel = it },
                         label = { Text("文本模型") },
@@ -131,7 +140,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
                     Button(
                         onClick = {
-                            vm.save(baseUrl, apiKey, visionModel, textModel)
+                            vm.save(baseUrl, apiKey, generalModel, visionModel, textModel)
                             onBack()
                         },
                         modifier = Modifier.fillMaxWidth(),

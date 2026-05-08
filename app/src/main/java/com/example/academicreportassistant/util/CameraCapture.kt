@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import android.content.Context
 import android.net.Uri
@@ -15,4 +15,3 @@ fun createTempCameraFile(context: Context): File {
 fun fileToContentUri(context: Context, file: File): Uri {
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }
-

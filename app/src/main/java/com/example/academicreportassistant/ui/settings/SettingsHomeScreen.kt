@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.settings
+package com.lzt.summaryofslides.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,4 +51,3 @@ fun SettingsHomeScreen(
         }
     }
 }
-

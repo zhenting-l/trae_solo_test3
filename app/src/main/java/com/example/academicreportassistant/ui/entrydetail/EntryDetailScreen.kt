@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.entrydetail
+package com.lzt.summaryofslides.ui.entrydetail
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,9 +40,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.example.academicreportassistant.util.createTempCameraFile
-import com.example.academicreportassistant.util.fileToContentUri
-import com.example.academicreportassistant.util.openPdf
+import com.lzt.summaryofslides.data.repo.EntryRepository
+import com.lzt.summaryofslides.util.createTempCameraFile
+import com.lzt.summaryofslides.util.fileToContentUri
+import com.lzt.summaryofslides.util.openPdf
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -147,7 +148,7 @@ fun EntryDetailScreen(
             ) {
                 Button(
                     onClick = { pickPdfLauncher.launch("application/pdf") },
-                    enabled = pdfsState.value.size < com.example.academicreportassistant.data.repo.EntryRepository.MaxPdfsPerEntry,
+                    enabled = pdfsState.value.size < EntryRepository.MaxPdfsPerEntry,
                     modifier = Modifier.weight(1f),
                     colors = importBtnColors,
                 ) {
@@ -163,9 +164,9 @@ fun EntryDetailScreen(
                 }
             }
 
-            if (pdfsState.value.size >= com.example.academicreportassistant.data.repo.EntryRepository.MaxPdfsPerEntry) {
+            if (pdfsState.value.size >= EntryRepository.MaxPdfsPerEntry) {
                 Text(
-                    com.example.academicreportassistant.data.repo.EntryRepository.PdfLimitMessage,
+                    EntryRepository.PdfLimitMessage,
                     color = MaterialTheme.colorScheme.error,
                 )
             }

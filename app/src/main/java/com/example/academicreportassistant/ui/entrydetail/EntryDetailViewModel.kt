@@ -1,20 +1,20 @@
-package com.example.academicreportassistant.ui.entrydetail
+package com.lzt.summaryofslides.ui.entrydetail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.data.db.EntryEntity
-import com.example.academicreportassistant.data.db.EntryImageEntity
-import com.example.academicreportassistant.data.db.EntryPdfEntity
-import com.example.academicreportassistant.data.db.SlideAnalysisEntity
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.data.db.EntryEntity
+import com.lzt.summaryofslides.data.db.EntryImageEntity
+import com.lzt.summaryofslides.data.db.EntryPdfEntity
+import com.lzt.summaryofslides.data.db.SlideAnalysisEntity
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import com.example.academicreportassistant.worker.WorkEnqueuer
+import com.lzt.summaryofslides.worker.WorkEnqueuer
 import android.content.Context
 import android.net.Uri
 import java.io.File
@@ -89,11 +89,6 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
                 _errorMessage.value = "缺少 baseUrl / apiKey"
                 return@launch
             }
-            val hasVision = settings.visionModel.isNotBlank() || settings.textModel.isNotBlank()
-            if (!hasVision) {
-                _errorMessage.value = "缺少视觉模型（或至少填写文本模型作为回退）"
-                return@launch
-            }
             val images = repo.getEntryImages(entryId)
             val pdfs = repo.getEntryPdfs(entryId)
             val hasImages = images.isNotEmpty()
@@ -101,6 +96,21 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
             if (!hasImages && hasPdfs) {
                 _errorMessage.value = "仅有PDF时请使用“开始分析PDF并生成总结”并选择分析方式"
                 return@launch
+            }
+            if (hasImages && hasPdfs) {
+                if (settings.generalModel.isBlank()) {
+                    _errorMessage.value = "缺少通用模型（图片+PDF）"
+                    return@launch
+                }
+            } else {
+                if (settings.visionModel.isBlank()) {
+                    _errorMessage.value = "缺少视觉模型"
+                    return@launch
+                }
+                if (settings.textModel.isBlank()) {
+                    _errorMessage.value = "缺少文本模型"
+                    return@launch
+                }
             }
             val total = images.size
             repo.updateEntryProgress(
@@ -129,9 +139,12 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
                     return@launch
                 }
             } else {
-                val hasVision = settings.visionModel.isNotBlank() || settings.textModel.isNotBlank()
-                if (!hasVision) {
-                    _errorMessage.value = "缺少视觉模型（或至少填写文本模型作为回退）"
+                if (settings.visionModel.isBlank()) {
+                    _errorMessage.value = "缺少视觉模型"
+                    return@launch
+                }
+                if (settings.textModel.isBlank()) {
+                    _errorMessage.value = "缺少文本模型"
                     return@launch
                 }
             }

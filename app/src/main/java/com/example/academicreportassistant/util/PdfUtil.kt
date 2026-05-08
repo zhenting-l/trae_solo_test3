@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -72,4 +72,3 @@ object PdfUtil {
         return result
     }
 }
-

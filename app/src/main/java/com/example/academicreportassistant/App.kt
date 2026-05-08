@@ -1,8 +1,8 @@
-package com.example.academicreportassistant
+package com.lzt.summaryofslides
 
 import android.app.Application
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.worker.WorkEnqueuer
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.worker.WorkEnqueuer
 import kotlinx.coroutines.runBlocking
 
 class App : Application() {

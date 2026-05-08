@@ -1,4 +1,4 @@
-package com.example.academicreportassistant
+package com.lzt.summaryofslides
 
 import android.Manifest
 import android.content.Intent
@@ -12,11 +12,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.example.academicreportassistant.ui.AppNav
-import com.example.academicreportassistant.ui.shareimport.SharePayload
-import com.example.academicreportassistant.ui.shareimport.SharePayloadHolder
-import com.example.academicreportassistant.worker.WorkEnqueuer
-import com.example.academicreportassistant.data.AppContainer
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.ui.AppNav
+import com.lzt.summaryofslides.ui.shareimport.SharePayload
+import com.lzt.summaryofslides.ui.shareimport.SharePayloadHolder
+import com.lzt.summaryofslides.worker.WorkEnqueuer
 import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {

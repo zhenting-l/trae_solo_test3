@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.data.db
+package com.lzt.summaryofslides.data.db
 
 import androidx.room.Database
 import androidx.room.RoomDatabase

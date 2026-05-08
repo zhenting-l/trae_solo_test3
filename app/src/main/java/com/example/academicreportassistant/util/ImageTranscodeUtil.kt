@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

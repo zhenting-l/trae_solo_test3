@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.entrylist
+package com.lzt.summaryofslides.ui.entrylist
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,7 +38,7 @@ fun EntryListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("学术报告条目") },
+                title = { Text("幻灯片条目") },
                 actions = { Button(onClick = onOpenSettings) { Text("设置") } },
             )
         },

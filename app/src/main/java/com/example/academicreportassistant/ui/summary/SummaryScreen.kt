@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.summary
+package com.lzt.summaryofslides.ui.summary
 
 import android.webkit.WebView
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,10 +20,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
-import com.example.academicreportassistant.data.AppContainer
-import com.example.academicreportassistant.data.db.EntryEntity
-import com.example.academicreportassistant.util.MarkdownHtmlUtil
-import com.example.academicreportassistant.util.MarkdownRender
+import com.lzt.summaryofslides.data.AppContainer
+import com.lzt.summaryofslides.data.db.EntryEntity
+import com.lzt.summaryofslides.util.MarkdownHtmlUtil
+import com.lzt.summaryofslides.util.MarkdownRender
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -51,7 +51,7 @@ fun SummaryScreen(
 ) {
     val vm: SummaryViewModel = viewModel(factory = SummaryViewModelFactory(entryId))
     val entryState = vm.entry.collectAsState()
-    val markdown = entryState.value?.finalSummary.orEmpty()
+    val markdown = normalizeStoredMarkdown(entryState.value?.finalSummary.orEmpty())
     var useWebView by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -106,6 +106,40 @@ fun SummaryScreen(
             )
         }
     }
+}
+
+private fun normalizeStoredMarkdown(raw: String): String {
+    val text = raw.trim()
+    val fenced =
+        Regex("```(?:markdown|md)\\s*([\\s\\S]*?)\\s*```", RegexOption.IGNORE_CASE)
+            .find(text)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+    if (!fenced.isNullOrBlank()) return fenced
+
+    if (!text.startsWith("{")) return raw
+    val idx = text.indexOf("final_summary")
+    if (idx < 0) return raw
+    val segment = text.substring(idx)
+    val marker = Regex("(?m)^\\s*\"?#\\s+").find(segment)
+    if (marker != null) {
+        var md = segment.substring(marker.range.first).trim()
+        if (md.startsWith("\"#")) md = md.drop(1)
+        md = md.removeSuffix("\"")
+        md = md.removeSuffix("}")
+        md = md.removeSuffix("\"")
+        return md.trim()
+    }
+    val hashIndex = segment.indexOf('#')
+    if (hashIndex >= 0) {
+        var md = segment.substring(hashIndex).trim()
+        md = md.removeSuffix("\"")
+        md = md.removeSuffix("}")
+        md = md.removeSuffix("\"")
+        return md.trim()
+    }
+    return raw
 }
 
 private fun buildHtml(bodyHtml: String): String {

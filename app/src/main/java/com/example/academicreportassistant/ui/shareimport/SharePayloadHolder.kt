@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.shareimport
+package com.lzt.summaryofslides.ui.shareimport
 
 import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,4 +22,3 @@ object SharePayloadHolder {
         return p
     }
 }
-

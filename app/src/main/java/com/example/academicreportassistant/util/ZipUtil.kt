@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import java.io.File
 import java.io.FileInputStream
@@ -19,4 +19,3 @@ object ZipUtil {
         }
     }
 }
-

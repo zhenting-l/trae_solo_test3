@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.ui.share
+package com.lzt.summaryofslides.ui.share
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

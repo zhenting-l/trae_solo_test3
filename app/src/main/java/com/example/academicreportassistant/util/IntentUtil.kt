@@ -1,4 +1,4 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import android.content.Context
 import android.content.Intent
@@ -14,4 +14,3 @@ fun openPdf(context: Context, pdfFile: File) {
         }
     context.startActivity(Intent.createChooser(intent, null))
 }
-

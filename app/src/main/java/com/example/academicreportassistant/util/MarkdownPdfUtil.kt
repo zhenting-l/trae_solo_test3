@@ -1,12 +1,12 @@
-package com.example.academicreportassistant.util
+package com.lzt.summaryofslides.util
 
 import android.content.Context
+import android.graphics.Color
 import android.graphics.pdf.PdfDocument
 import android.util.TypedValue
 import android.view.View
 import android.widget.TextView
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.ceil
@@ -32,11 +32,12 @@ object MarkdownPdfUtil {
                     ellipsize = null
                     maxLines = Integer.MAX_VALUE
                     isSingleLine = false
+                    setBackgroundColor(Color.WHITE)
+                    setTextColor(Color.BLACK)
                     setText(markdown)
                 }
 
             MarkdownRender.get(context).setMarkdown(tv, markdown)
-            delay(800)
 
             val widthSpec = View.MeasureSpec.makeMeasureSpec(contentWidth, View.MeasureSpec.EXACTLY)
             val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
@@ -51,6 +52,7 @@ object MarkdownPdfUtil {
                 val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
                 val page = doc.startPage(pageInfo)
                 val canvas = page.canvas
+                canvas.drawColor(Color.WHITE)
                 val yOffset = pageIndex * contentHeight
                 canvas.save()
                 canvas.translate(margin.toFloat(), (margin - yOffset).toFloat())
