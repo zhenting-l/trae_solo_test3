@@ -8,6 +8,7 @@ import com.lzt.summaryofslides.data.AppContainer
 import com.lzt.summaryofslides.data.db.EntryEntity
 import com.lzt.summaryofslides.data.db.EntryImageEntity
 import com.lzt.summaryofslides.data.db.EntryPdfEntity
+import com.lzt.summaryofslides.data.db.EntrySummaryEntity
 import com.lzt.summaryofslides.util.ShareUtil
 import com.lzt.summaryofslides.util.ZipUtil
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,10 +29,13 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
     val pdfs: StateFlow<List<EntryPdfEntity>> =
         repo.observeEntryPdfs(entryId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val summaries: StateFlow<List<EntrySummaryEntity>> =
+        repo.observeSummaries(entryId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun share(
         context: Context,
         selectedImageIds: Set<String>,
-        includeSummaryMd: Boolean,
+        selectedSummaryIds: Set<String>,
         includeSlidesPdf: Boolean,
     ) {
         viewModelScope.launch {
@@ -44,11 +48,12 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
                 files += File(img.localPath) to "images/$fileName"
             }
 
-            val summaryPath = entry.value?.summaryMdPath
-            val baseTitle = entry.value?.shortTitle ?: entry.value?.title ?: entry.value?.talkTitle ?: "summary"
-            val baseStem = sanitizeFileName(baseTitle)
-            if (includeSummaryMd && !summaryPath.isNullOrBlank()) {
-                files += File(summaryPath) to "$baseStem.md"
+            val chosenSummaries = summaries.value.filter { selectedSummaryIds.contains(it.id) }
+            for (s in chosenSummaries) {
+                val mdPath = s.summaryMdPath ?: continue
+                val file = File(mdPath)
+                if (!file.exists()) continue
+                files += file to "summaries/${file.name}"
             }
 
             if (includeSlidesPdf) {
@@ -70,6 +75,14 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
                     }
                 ShareUtil.shareSingleFile(context, file, mimeType)
             } else {
+                val baseTitle =
+                    (chosenSummaries.singleOrNull()?.shortTitle
+                        ?: chosenSummaries.singleOrNull()?.talkTitle
+                        ?: entry.value?.shortTitle
+                        ?: entry.value?.title
+                        ?: entry.value?.talkTitle
+                        ?: "summary")
+                val baseStem = sanitizeFileName(baseTitle)
                 val out =
                     File(context.cacheDir, "share/${baseStem}-${System.currentTimeMillis()}.zip").apply {
                         parentFile?.mkdirs()

@@ -139,6 +139,9 @@ interface EntrySummaryDao {
     @Query("SELECT * FROM entry_summaries WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): EntrySummaryEntity?
 
+    @Query("SELECT COUNT(*) FROM entry_summaries WHERE entryId = :entryId")
+    suspend fun countByEntry(entryId: String): Int
+
     @Query("DELETE FROM entry_summaries WHERE entryId = :entryId")
     suspend fun deleteByEntry(entryId: String)
 }

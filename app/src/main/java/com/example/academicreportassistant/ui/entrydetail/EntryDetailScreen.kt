@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -169,7 +170,7 @@ fun EntryDetailScreen(
                     modifier = Modifier.weight(1f),
                     colors = importBtnColors,
                 ) {
-                    Text("查看PDF")
+                    Text("查看已上传PDF")
                 }
             }
 
@@ -227,7 +228,7 @@ fun EntryDetailScreen(
             if (showPdfListDialog) {
                 AlertDialog(
                     onDismissRequest = { showPdfListDialog = false },
-                    title = { Text("查看PDF") },
+                    title = { Text("查看已上传PDF") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             for (pdf in pdfsState.value) {
@@ -414,7 +415,10 @@ fun EntryDetailScreen(
 
     val file = previewImageFile
     if (file != null) {
-        Dialog(onDismissRequest = { previewImageFile = null }) {
+        Dialog(
+            onDismissRequest = { previewImageFile = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
             var scale by remember { mutableStateOf(1f) }
             var offset by remember { mutableStateOf(Offset.Zero) }
             val state =

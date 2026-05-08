@@ -24,6 +24,7 @@ import com.lzt.summaryofslides.data.AppContainer
 import com.lzt.summaryofslides.data.db.EntryEntity
 import com.lzt.summaryofslides.util.MarkdownHtmlUtil
 import com.lzt.summaryofslides.util.MarkdownRender
+import com.lzt.summaryofslides.util.MarkdownTidyUtil
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -51,8 +52,8 @@ fun SummaryScreen(
 ) {
     val vm: SummaryViewModel = viewModel(factory = SummaryViewModelFactory(entryId))
     val entryState = vm.entry.collectAsState()
-    val markdown = normalizeStoredMarkdown(entryState.value?.finalSummary.orEmpty())
-    var useWebView by remember { mutableStateOf(true) }
+    val markdown = MarkdownTidyUtil.tidy(normalizeStoredMarkdown(entryState.value?.finalSummary.orEmpty()))
+    var useWebView by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -98,6 +99,7 @@ fun SummaryScreen(
                 factory = { context ->
                     TextView(context).apply {
                         textSize = 16f
+                        setLineSpacing(0f, 1.35f)
                     }
                 },
                 update = { tv ->

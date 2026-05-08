@@ -9,6 +9,7 @@ import com.lzt.summaryofslides.data.db.EntryPdfEntity
 import com.lzt.summaryofslides.data.db.SlideAnalysisEntity
 import com.lzt.summaryofslides.llm.OpenAiCompatClient
 import com.lzt.summaryofslides.util.ImageTranscodeUtil
+import com.lzt.summaryofslides.util.MarkdownTidyUtil
 import com.lzt.summaryofslides.util.NotificationUtil
 import android.app.NotificationManager
 import kotlinx.coroutines.Dispatchers
@@ -138,8 +139,10 @@ class AnalyzeEntryWorker(
                     }
 
                 val payload = parseSummaryPayload(json, finalRaw)
-                val mdFile = summaryMarkdownFile(repo, entryId, payload.shortTitle ?: payload.talkTitle)
-                writeUtf8(mdFile, payload.finalSummaryMarkdown)
+                val mdIndex = repo.getSummaryCount(entryId) + 1
+                val mdFile = summaryMarkdownFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
+                val cleaned = MarkdownTidyUtil.tidy(payload.finalSummaryMarkdown)
+                writeUtf8(mdFile, cleaned)
                 repo.setFinalResult(
                     entryId = entryId,
                     shortTitle = payload.shortTitle,
@@ -147,7 +150,7 @@ class AnalyzeEntryWorker(
                     speakerAffiliation = payload.speakerAffiliation,
                     talkTitle = payload.talkTitle,
                     keywords = payload.keywords,
-                    finalSummary = payload.finalSummaryMarkdown,
+                    finalSummary = cleaned,
                     summaryMdPath = mdFile.absolutePath,
                 )
                 clearProgressNotification(entryId)
@@ -246,8 +249,10 @@ class AnalyzeEntryWorker(
             }
 
             updateProgress(repo, entryId, "PROCESSING", "GENERATE_FILE", null, null, "生成Markdown文件")
-            val mdFile = summaryMarkdownFile(repo, entryId, shortTitle ?: talkTitle)
-            writeUtf8(mdFile, finalSummary)
+            val mdIndex = repo.getSummaryCount(entryId) + 1
+            val mdFile = summaryMarkdownFile(repo, entryId, mdIndex, shortTitle ?: talkTitle)
+            val cleaned = MarkdownTidyUtil.tidy(finalSummary)
+            writeUtf8(mdFile, cleaned)
 
             updateProgress(repo, entryId, "PROCESSING", "SAVE_RESULT", null, null, "保存结果")
             repo.setFinalResult(
@@ -257,7 +262,7 @@ class AnalyzeEntryWorker(
                 speakerAffiliation = speakerAffiliation,
                 talkTitle = talkTitle,
                 keywords = keywords,
-                finalSummary = finalSummary,
+                finalSummary = cleaned,
                 summaryMdPath = mdFile.absolutePath,
             )
 
@@ -408,7 +413,7 @@ class AnalyzeEntryWorker(
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：
@@ -425,7 +430,7 @@ ${allSlides.take(120_000)}
   "speaker_affiliation": "单位/机构(若无法确定则空字符串)",
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
 }
 """.trimIndent()
     }
@@ -440,7 +445,7 @@ ${allSlides.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：
@@ -479,10 +484,12 @@ ${allSlides.take(120_000)}
     private fun summaryMarkdownFile(
         repo: com.lzt.summaryofslides.data.repo.EntryRepository,
         entryId: String,
+        index: Int,
         title: String?,
     ): File {
         val base = sanitizeFileStem(title ?: "summary")
-        return File(repo.entryDir(entryId), "$base.md")
+        val prefix = "S$index-"
+        return File(repo.entryDir(entryId), "$prefix$base.md")
     }
 
     private fun sanitizeFileStem(raw: String): String {

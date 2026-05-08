@@ -45,6 +45,9 @@ class EntryRepository(
     fun observeSummaries(entryId: String): Flow<List<EntrySummaryEntity>> =
         db.entrySummaryDao().observeByEntry(entryId)
 
+    suspend fun getSummaryCount(entryId: String): Int =
+        db.entrySummaryDao().countByEntry(entryId)
+
     fun observeSummaryCount(entryId: String): Flow<Int> =
         db.entrySummaryDao().observeCountByEntry(entryId)
 

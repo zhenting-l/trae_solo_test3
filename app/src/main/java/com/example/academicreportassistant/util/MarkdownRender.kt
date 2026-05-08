@@ -14,6 +14,8 @@ object MarkdownRender {
     fun get(context: Context): Markwon {
         val existing = cached
         if (existing != null) return existing
+        val density = context.applicationContext.resources.displayMetrics.scaledDensity
+        val latexSize = 16f * density
         val created =
             Markwon.builder(context.applicationContext)
                 .usePlugin(ImagesPlugin.create())
@@ -21,7 +23,7 @@ object MarkdownRender {
                 .usePlugin(TablePlugin.create(context))
                 .usePlugin(
                     JLatexMathPlugin.create(
-                        42f,
+                        latexSize,
                         { builder ->
                             builder.blocksEnabled(true)
                             builder.inlinesEnabled(true)

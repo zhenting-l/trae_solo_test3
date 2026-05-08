@@ -15,6 +15,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,10 +38,11 @@ fun ShareScreen(
     val entryState = vm.entry.collectAsState()
     val imagesState = vm.images.collectAsState()
     val pdfsState = vm.pdfs.collectAsState()
+    val summariesState = vm.summaries.collectAsState()
     val context = LocalContext.current
 
     var selectedImageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var includeSummaryMd by remember { mutableStateOf(true) }
+    var selectedSummaryIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var includeSlidesPdf by remember { mutableStateOf(true) }
 
     Scaffold(
@@ -58,14 +60,9 @@ fun ShareScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val summaryPath = entryState.value?.summaryMdPath
-            if (!summaryPath.isNullOrBlank() && File(summaryPath).exists()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(checked = includeSummaryMd, onCheckedChange = { includeSummaryMd = it })
-                    Text("包含总结Markdown")
+            LaunchedEffect(summariesState.value) {
+                if (selectedSummaryIds.isEmpty() && summariesState.value.isNotEmpty()) {
+                    selectedSummaryIds = setOf(summariesState.value.first().id)
                 }
             }
             if (pdfsState.value.isNotEmpty()) {
@@ -78,8 +75,29 @@ fun ShareScreen(
                 }
             }
 
-            Text("选择要分享的照片")
             LazyColumn(modifier = Modifier.weight(1f)) {
+                if (summariesState.value.isNotEmpty()) {
+                    item { Text("选择要分享的总结") }
+                    items(summariesState.value, key = { it.id }) { s ->
+                        val checked = selectedSummaryIds.contains(s.id)
+                        val fileName = s.summaryMdPath?.let { File(it).name }.orEmpty()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = { c ->
+                                    selectedSummaryIds =
+                                        if (c) selectedSummaryIds + s.id else selectedSummaryIds - s.id
+                                },
+                            )
+                            Text(if (fileName.isNotBlank()) fileName else (s.shortTitle ?: s.talkTitle ?: "总结"))
+                        }
+                    }
+                }
+
+                item { Text("选择要分享的照片") }
                 items(imagesState.value, key = { it.id }) { img ->
                     val checked = selectedImageIds.contains(img.id)
                     val order = img.displayOrder ?: 0
@@ -101,7 +119,7 @@ fun ShareScreen(
             }
 
             Button(
-                onClick = { vm.share(context, selectedImageIds, includeSummaryMd, includeSlidesPdf) },
+                onClick = { vm.share(context, selectedImageIds, selectedSummaryIds, includeSlidesPdf) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("分享所选内容")
