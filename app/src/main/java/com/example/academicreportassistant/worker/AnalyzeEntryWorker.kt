@@ -12,6 +12,7 @@ import com.lzt.summaryofslides.data.db.EntryImageEntity
 import com.lzt.summaryofslides.data.db.EntryPdfEntity
 import com.lzt.summaryofslides.data.db.SlideAnalysisEntity
 import com.lzt.summaryofslides.llm.OpenAiCompatClient
+import com.lzt.summaryofslides.llm.ZhiPuDocParser
 import com.lzt.summaryofslides.util.ImageTranscodeUtil
 import com.lzt.summaryofslides.util.MarkdownHtmlUtil
 import com.lzt.summaryofslides.util.MarkdownHtmlTemplate
@@ -122,31 +123,34 @@ class AnalyzeEntryWorker(
 
             if (!hasImages && hasPdfs) {
                 repo.clearSlideAnalyses(entryId)
-                updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（PDF直传）")
-                val finalRaw =
+                val payload =
                     runCatching {
-                        llm.visionChatCompletionWithPdfFiles(
-                            baseUrl = baseUrl,
-                            apiKey = apiKey,
-                            model = settings.generalModel,
-                            prompt = pdfOnlyPrompt(),
-                            pdfFiles = pdfFiles,
-                        )
+                        updateProgress(repo, entryId, "PROCESSING", "PARSE_PDF", null, null, "解析PDF为Markdown")
+                        val pdfMd = parsePdfFilesToMarkdown(baseUrl, apiKey, pdfFiles)
+                        updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（基于PDF文本）")
+                        val finalRaw =
+                            llm.textChatCompletion(
+                                baseUrl = baseUrl,
+                                apiKey = apiKey,
+                                model = settings.generalModel,
+                                prompt = pdfMarkdownPrompt(pdfMd),
+                            )
+                        parseSummaryPayload(json, finalRaw)
                     }.getOrElse { e ->
                         if (settings.visionModel.isBlank()) {
                             repo.updateEntryProgress(
                                 entryId = entryId,
                                 status = "FAILED",
-                                stage = "CALL_GENERAL",
+                                stage = "PARSE_PDF",
                                 current = null,
                                 total = null,
-                                message = "通用模型不支持PDF直传，请配置视觉模型以回退解析",
+                                message = "PDF解析失败，请配置视觉模型以回退解析",
                                 lastError = e.message,
                             )
                             return Result.failure()
                         }
 
-                        updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF直传失败，回退为逐页视觉解析")
+                        updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF解析失败，回退为逐页视觉解析")
                         val pageFiles = renderPdfToImageFiles(repo, entryId, pdfFiles)
                         val imagesForAnalysis =
                             pageFiles.mapIndexed { idx, file ->
@@ -164,56 +168,20 @@ class AnalyzeEntryWorker(
                                     jpegBytes = null,
                                 )
                             }
-                        val payload = runCatching {
-                            analyzeImagesAndMerge(
-                                repo = repo,
-                                llm = llm,
-                                json = json,
-                                entryId = entryId,
-                                baseUrl = baseUrl,
-                                apiKey = apiKey,
-                                imagesForAnalysis = imagesForAnalysis,
-                                visionModel = settings.visionModel,
-                                generalModel = settings.generalModel,
-                                mergeWithPdfs = false,
-                                pdfFiles = emptyList(),
-                            )
-                        }.getOrElse { t ->
-                            repo.updateEntryProgress(
-                                entryId = entryId,
-                                status = "FAILED",
-                                stage = "FAILED",
-                                current = null,
-                                total = null,
-                                message = "处理失败",
-                                lastError = t.message,
-                            )
-                            return Result.failure()
-                        }
-
-                        val mdIndex = repo.getSummaryCount(entryId) + 1
-                        val mdFile = summaryMarkdownFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
-                        val htmlFile = summaryHtmlFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
-                        val cleaned = MarkdownTidyUtil.tidy(payload.finalSummaryMarkdown)
-                        writeUtf8(mdFile, cleaned)
-                        val html = MarkdownHtmlTemplate.wrap(MarkdownHtmlUtil.toHtml(cleaned))
-                        writeUtf8(htmlFile, html)
-                        repo.setFinalResult(
+                        analyzeImagesAndMerge(
+                            repo = repo,
+                            llm = llm,
+                            json = json,
                             entryId = entryId,
-                            shortTitle = payload.shortTitle,
-                            speakerName = payload.speakerName,
-                            speakerAffiliation = payload.speakerAffiliation,
-                            talkTitle = payload.talkTitle,
-                            keywords = payload.keywords,
-                            finalSummary = cleaned,
-                            summaryMdPath = mdFile.absolutePath,
-                            summaryHtmlPath = htmlFile.absolutePath,
+                            baseUrl = baseUrl,
+                            apiKey = apiKey,
+                            imagesForAnalysis = imagesForAnalysis,
+                            visionModel = settings.visionModel,
+                            generalModel = settings.generalModel,
+                            mergeWithPdfs = false,
+                            pdfFiles = emptyList(),
                         )
-                        clearProgressNotification(entryId)
-                        return Result.success()
                     }
-
-                val payload = parseSummaryPayload(json, finalRaw)
                 val mdIndex = repo.getSummaryCount(entryId) + 1
                 val mdFile = summaryMarkdownFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
                 val htmlFile = summaryHtmlFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
@@ -421,22 +389,23 @@ class AnalyzeEntryWorker(
         updateProgress(repo, entryId, "PROCESSING", "MERGE_SUMMARY", null, null, "融合信息与生成总结")
         val finalRaw =
             if (mergeWithPdfs) {
-                updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（PDF直传）")
-                runCatching {
-                    llm.visionChatCompletionWithPdfFiles(
-                        baseUrl = baseUrl,
-                        apiKey = apiKey,
-                        model = generalModel,
-                        prompt = finalPromptWithPdfs(compactForMerge.toString()),
-                        pdfFiles = pdfFiles,
-                    )
-                }.getOrElse {
-                    updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF直传失败，回退为仅基于图片总结")
+                updateProgress(repo, entryId, "PROCESSING", "PARSE_PDF", null, null, "解析PDF为Markdown")
+                val pdfMd = runCatching { parsePdfFilesToMarkdown(baseUrl, apiKey, pdfFiles) }.getOrNull()
+                if (pdfMd.isNullOrBlank()) {
+                    updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF解析失败，回退为仅基于图片总结")
                     llm.textChatCompletion(
                         baseUrl = baseUrl,
                         apiKey = apiKey,
                         model = generalModel,
                         prompt = finalPrompt(compactForMerge.toString()),
+                    )
+                } else {
+                    updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（融合PDF文本）")
+                    llm.textChatCompletion(
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        model = generalModel,
+                        prompt = finalPromptWithPdfMarkdown(compactForMerge.toString(), pdfMd),
                     )
                 }
             } else {
@@ -448,6 +417,27 @@ class AnalyzeEntryWorker(
                 )
             }
         return parseSummaryPayload(json, finalRaw)
+    }
+
+    private fun finalPromptWithPdfMarkdown(allSlides: String, pdfMd: String): String {
+        return """
+你将收到同一份幻灯片材料的逐页JSON解析结果，同时还会收到由PDF版式解析器抽取出的Markdown内容。请综合两者，完成信息融合、延伸挖掘，并输出严格JSON（不要包含除JSON以外的任何文本），结构如下：
+{
+  "short_title": "为该条目生成一个最适合展示在列表页的短标题（1-3行，可中英文混用，尽量信息密度高）",
+  "speaker_name": "报告人姓名(若无法确定则空字符串)",
+  "speaker_affiliation": "单位/机构(若无法确定则空字符串)",
+  "talk_title": "报告标题(若无法确定则空字符串)",
+  "keywords": ["关键词1","关键词2"],
+  "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
+}
+
+逐页解析如下：
+${allSlides.take(120_000)}
+
+PDF抽取Markdown如下：
+${pdfMd.take(120_000)}
+""".trimIndent()
     }
 
     private suspend fun renderPdfToImageFiles(
@@ -649,6 +639,62 @@ ${allSlides.take(120_000)}
     private fun sanitizeName(raw: String): String {
         val cleaned = raw.trim().replace(Regex("""[\\/:*?"<>|]"""), " ")
         return cleaned.replace(Regex("""\s+"""), " ").trim().take(40).ifBlank { "未命名" }
+    }
+
+    private suspend fun parsePdfFilesToMarkdown(baseUrl: String, apiKey: String, pdfFiles: List<File>): String {
+        val lower = baseUrl.lowercase()
+        val isZhiPu = lower.contains("/api/paas/v4") || lower.contains("/api/coding/paas/v4")
+        if (!isZhiPu) throw IllegalStateException("当前供应商不支持PDF解析")
+        val sb = StringBuilder()
+        for ((idx, file) in pdfFiles.withIndex()) {
+            val current = idx + 1
+            val parser = ZhiPuDocParser()
+            val md =
+                runCatching {
+                    parser.parsePdfToMarkdown(
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        pdfFile = file,
+                        startPageId = 1,
+                        endPageId = 50,
+                    )
+                }.recoverCatching {
+                    parser.parsePdfToMarkdown(
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        pdfFile = file,
+                        startPageId = 1,
+                        endPageId = 20,
+                    )
+                }.recoverCatching {
+                    parser.parsePdfToMarkdown(
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        pdfFile = file,
+                        startPageId = 1,
+                        endPageId = 10,
+                    )
+                }.getOrThrow()
+            sb.append("\n\n").append("## Document ").append(current).append("\n\n").append(md)
+        }
+        return sb.toString().trim()
+    }
+
+    private fun pdfMarkdownPrompt(md: String): String {
+        return """
+你将收到一份由PDF版式解析器抽取出的Markdown内容（可能包含公式、表格、章节结构）。请只基于该内容进行学术报告/幻灯片材料总结与延伸挖掘，并输出严格JSON（不要包含除JSON以外的任何文本），结构如下：
+{
+  "short_title": "为该条目生成一个最适合展示在列表页的短标题（1-3行，可中英文混用，尽量信息密度高）",
+  "speaker_name": "报告人姓名(若无法确定则空字符串)",
+  "speaker_affiliation": "单位/机构(若无法确定则空字符串)",
+  "talk_title": "报告标题(若无法确定则空字符串)",
+  "keywords": ["关键词1","关键词2"],
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
+}
+
+文档Markdown如下：
+${md.take(120_000)}
+""".trimIndent()
     }
 
     private fun summaryMarkdownFile(

@@ -1,7 +1,6 @@
 package com.lzt.summaryofslides.ui.summary
 
 import android.webkit.WebView
-import android.net.Uri
 import android.widget.TextView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -85,7 +84,25 @@ fun SummaryDetailScreen(
                 update = { webView ->
                     val htmlPath = summaryState.value?.summaryHtmlPath
                     if (!htmlPath.isNullOrBlank() && File(htmlPath).exists()) {
-                        webView.loadUrl(Uri.fromFile(File(htmlPath)).toString())
+                        val html = runCatching { File(htmlPath).readText(Charsets.UTF_8) }.getOrNull()
+                        if (!html.isNullOrBlank()) {
+                            webView.loadDataWithBaseURL(
+                                "https://app.local/",
+                                html,
+                                "text/html",
+                                "utf-8",
+                                null,
+                            )
+                        } else {
+                            val bodyHtml = MarkdownHtmlUtil.toHtml(markdown)
+                            webView.loadDataWithBaseURL(
+                                "https://app.local/",
+                                MarkdownHtmlTemplate.wrap(bodyHtml),
+                                "text/html",
+                                "utf-8",
+                                null,
+                            )
+                        }
                     } else {
                         val bodyHtml = MarkdownHtmlUtil.toHtml(markdown)
                         webView.loadDataWithBaseURL(
@@ -151,4 +168,3 @@ private fun normalizeStoredMarkdown(raw: String): String {
     }
     return raw
 }
-
