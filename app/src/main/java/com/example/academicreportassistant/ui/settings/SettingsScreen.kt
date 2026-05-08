@@ -42,14 +42,12 @@ fun SettingsScreen(onBack: () -> Unit) {
     var apiKey by remember { mutableStateOf("") }
     var generalModel by remember { mutableStateOf("") }
     var visionModel by remember { mutableStateOf("") }
-    var textModel by remember { mutableStateOf("") }
 
     LaunchedEffect(settings.value) {
         baseUrl = settings.value.baseUrl
         apiKey = settings.value.apiKey
         generalModel = settings.value.generalModel
         visionModel = settings.value.visionModel
-        textModel = settings.value.textModel
     }
 
     Scaffold(
@@ -126,21 +124,14 @@ fun SettingsScreen(onBack: () -> Unit) {
                     TextField(
                         value = generalModel,
                         onValueChange = { generalModel = it },
-                        label = { Text("通用模型（图片+PDF）") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                    TextField(
-                        value = textModel,
-                        onValueChange = { textModel = it },
-                        label = { Text("文本模型") },
+                        label = { Text("通用模型") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                     )
 
                     Button(
                         onClick = {
-                            vm.save(baseUrl, apiKey, generalModel, visionModel, textModel)
+                            vm.save(baseUrl, apiKey, generalModel, visionModel)
                             onBack()
                         },
                         modifier = Modifier.fillMaxWidth(),

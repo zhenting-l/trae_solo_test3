@@ -31,7 +31,7 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
     fun share(
         context: Context,
         selectedImageIds: Set<String>,
-        includeSummaryPdf: Boolean,
+        includeSummaryMd: Boolean,
         includeSlidesPdf: Boolean,
     ) {
         viewModelScope.launch {
@@ -44,9 +44,11 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
                 files += File(img.localPath) to "images/$fileName"
             }
 
-            val summaryPath = entry.value?.summaryPdfPath
-            if (includeSummaryPdf && !summaryPath.isNullOrBlank()) {
-                files += File(summaryPath) to "summary.pdf"
+            val summaryPath = entry.value?.summaryMdPath
+            val baseTitle = entry.value?.shortTitle ?: entry.value?.title ?: entry.value?.talkTitle ?: "summary"
+            val baseStem = sanitizeFileName(baseTitle)
+            if (includeSummaryMd && !summaryPath.isNullOrBlank()) {
+                files += File(summaryPath) to "$baseStem.md"
             }
 
             if (includeSlidesPdf) {
@@ -63,16 +65,17 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
                     when {
                         name.endsWith(".pdf") -> "application/pdf"
                         name.endsWith(".jpg") || name.endsWith(".jpeg") -> "image/jpeg"
+                        name.endsWith(".md") -> "text/markdown"
                         else -> "application/octet-stream"
                     }
                 ShareUtil.shareSingleFile(context, file, mimeType)
             } else {
-                val zipFile =
-                    File(context.cacheDir, "share/$entryId-${System.currentTimeMillis()}.zip").apply {
+                val out =
+                    File(context.cacheDir, "share/${baseStem}-${System.currentTimeMillis()}.zip").apply {
                         parentFile?.mkdirs()
                     }
-                ZipUtil.zipFiles(files, zipFile)
-                ShareUtil.shareZip(context, zipFile)
+                ZipUtil.zipFiles(files, out)
+                ShareUtil.shareZip(context, out)
             }
         }
     }

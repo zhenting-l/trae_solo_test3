@@ -2,6 +2,8 @@ package com.lzt.summaryofslides.ui.entrydetail
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -34,12 +39,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.lzt.summaryofslides.data.repo.EntryRepository
 import com.lzt.summaryofslides.util.createTempCameraFile
 import com.lzt.summaryofslides.util.fileToContentUri
@@ -52,7 +62,6 @@ fun EntryDetailScreen(
     entryId: String,
     onBack: () -> Unit,
     onShare: () -> Unit,
-    onOpenIntermediate: () -> Unit,
     onOpenSummary: () -> Unit,
     onOpenSummaryHistory: () -> Unit,
 ) {
@@ -64,10 +73,10 @@ fun EntryDetailScreen(
     val summaryCountState = vm.summaryCount.collectAsState()
     val context = LocalContext.current
     var pendingCameraFile: File? by remember { mutableStateOf(null) }
-    var showPdfModeDialog by remember { mutableStateOf(false) }
     var showPdfListDialog by remember { mutableStateOf(false) }
     var pendingDeleteImageId by remember { mutableStateOf<String?>(null) }
     var pendingDeletePdfId by remember { mutableStateOf<String?>(null) }
+    var previewImageFile by remember { mutableStateOf<File?>(null) }
 
     val takePictureLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
@@ -178,14 +187,9 @@ fun EntryDetailScreen(
                     val hasImages = imagesState.value.isNotEmpty()
                     val hasPdfs = pdfsState.value.isNotEmpty()
                     if (status == "QUEUED" || status == "PROCESSING") {
-                        showPdfModeDialog = false
                         vm.cancelAnalysis(context)
                     } else {
-                        if (!hasImages && hasPdfs) {
-                            showPdfModeDialog = true
-                        } else {
-                            vm.startAnalysis(context)
-                        }
+                        vm.startAnalysis(context)
                     }
                 },
                 enabled =
@@ -218,36 +222,6 @@ fun EntryDetailScreen(
                 ) {
                     Text("查看总结历史（${summaryCountState.value}）")
                 }
-            }
-
-            if (showPdfModeDialog) {
-                AlertDialog(
-                    onDismissRequest = { showPdfModeDialog = false },
-                    title = { Text("选择分析方式") },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(
-                                onClick = {
-                                    showPdfModeDialog = false
-                                    vm.startPdfAnalysis(context, "direct")
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("PDF直读（文字模型）")
-                            }
-                            Button(
-                                onClick = {
-                                    showPdfModeDialog = false
-                                    vm.startPdfAnalysis(context, "vision")
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("PDF转图片（视觉模型）")
-                            }
-                        }
-                    },
-                    confirmButton = {},
-                )
             }
 
             if (showPdfListDialog) {
@@ -379,27 +353,12 @@ fun EntryDetailScreen(
             val lastError = entry?.lastError
             if (!lastError.isNullOrBlank()) Text("错误：$lastError")
 
-            val pdfPath = entryState.value?.summaryPdfPath
             if (status == "SUCCEEDED") {
                 Button(
                     onClick = onOpenSummary,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("查看总结（Markdown）")
-                }
-                Button(
-                    onClick = onOpenIntermediate,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("查看中间输出（精选）")
-                }
-            }
-            if (status == "SUCCEEDED" && !pdfPath.isNullOrBlank()) {
-                Button(
-                    onClick = { openPdf(context, File(pdfPath)) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("打开总结PDF")
                 }
             }
 
@@ -418,6 +377,10 @@ fun EntryDetailScreen(
                             AsyncImage(
                                 model = File(img.localPath),
                                 contentDescription = null,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { previewImageFile = File(img.localPath) },
                             )
                             Button(
                                 onClick = { menuExpanded = true },
@@ -445,6 +408,45 @@ fun EntryDetailScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    val file = previewImageFile
+    if (file != null) {
+        Dialog(onDismissRequest = { previewImageFile = null }) {
+            var scale by remember { mutableStateOf(1f) }
+            var offset by remember { mutableStateOf(Offset.Zero) }
+            val state =
+                rememberTransformableState { zoomChange, offsetChange, _ ->
+                    scale = (scale * zoomChange).coerceIn(1f, 6f)
+                    offset += offsetChange
+                }
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                        .transformable(state)
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { previewImageFile = null })
+                        },
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = file,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = offset.x,
+                                translationY = offset.y,
+                            ),
+                )
             }
         }
     }

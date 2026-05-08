@@ -16,7 +16,6 @@ data class ModelSettings(
     val apiKey: String,
     val generalModel: String,
     val visionModel: String,
-    val textModel: String,
 )
 
 class SettingsStore(private val context: Context) {
@@ -26,7 +25,6 @@ class SettingsStore(private val context: Context) {
         val apiKey = stringPreferencesKey("api_key")
         val generalModel = stringPreferencesKey("general_model")
         val visionModel = stringPreferencesKey("vision_model")
-        val textModel = stringPreferencesKey("text_model")
     }
 
     val modelSettings: Flow<ModelSettings> = context.dataStore.data.map { prefs ->
@@ -39,7 +37,6 @@ class SettingsStore(private val context: Context) {
             apiKey = prefs[Keys.apiKey] ?: "",
             generalModel = prefs[Keys.generalModel] ?: preset.defaultGeneralModel,
             visionModel = prefs[Keys.visionModel] ?: preset.defaultVisionModel,
-            textModel = prefs[Keys.textModel] ?: preset.defaultTextModel,
         )
     }
 
@@ -49,7 +46,6 @@ class SettingsStore(private val context: Context) {
             prefs[Keys.baseUrl] = preset.defaultBaseUrl
             prefs[Keys.generalModel] = preset.defaultGeneralModel
             prefs[Keys.visionModel] = preset.defaultVisionModel
-            prefs[Keys.textModel] = preset.defaultTextModel
         }
     }
 
@@ -58,14 +54,12 @@ class SettingsStore(private val context: Context) {
         apiKey: String? = null,
         generalModel: String? = null,
         visionModel: String? = null,
-        textModel: String? = null,
     ) {
         context.dataStore.edit { prefs ->
             if (baseUrl != null) prefs[Keys.baseUrl] = baseUrl
             if (apiKey != null) prefs[Keys.apiKey] = apiKey
             if (generalModel != null) prefs[Keys.generalModel] = generalModel
             if (visionModel != null) prefs[Keys.visionModel] = visionModel
-            if (textModel != null) prefs[Keys.textModel] = textModel
         }
     }
 }

@@ -74,6 +74,7 @@ class EntryRepository(
                 keywords = null,
                 finalSummary = null,
                 summaryPdfPath = null,
+                summaryMdPath = null,
             ),
         )
         ensureEntryDir(id)
@@ -179,6 +180,20 @@ class EntryRepository(
         db.entryDao().upsert(entry.copy(slidesPdfPath = firstPdf, updatedAtEpochMs = System.currentTimeMillis()))
     }
 
+    suspend fun deleteEntry(entryId: String) {
+        runCatching {
+            db.slideAnalysisDao().deleteByEntry(entryId)
+            db.entryImageDao().deleteByEntry(entryId)
+            db.entryPdfDao().deleteByEntry(entryId)
+            db.entrySummaryDao().deleteByEntry(entryId)
+            db.entryDao().deleteById(entryId)
+        }
+        runCatching {
+            val dir = entryDir(entryId)
+            if (dir.exists()) dir.deleteRecursively()
+        }
+    }
+
     suspend fun saveSlideAnalyses(items: List<SlideAnalysisEntity>) {
         db.slideAnalysisDao().upsertAll(items)
     }
@@ -195,7 +210,7 @@ class EntryRepository(
         talkTitle: String?,
         keywords: String?,
         finalSummary: String,
-        summaryPdfPath: String?,
+        summaryMdPath: String?,
     ) {
         val entry = requireNotNull(db.entryDao().getById(entryId))
         val now = System.currentTimeMillis()
@@ -218,7 +233,8 @@ class EntryRepository(
                 speakerAffiliation = speakerAffiliation,
                 keywords = keywords,
                 finalSummary = finalSummary,
-                summaryPdfPath = summaryPdfPath,
+                summaryPdfPath = null,
+                summaryMdPath = summaryMdPath,
             ),
         )
         db.entryDao().upsert(
@@ -230,7 +246,8 @@ class EntryRepository(
                 talkTitle = talkTitle,
                 keywords = keywords,
                 finalSummary = finalSummary,
-                summaryPdfPath = summaryPdfPath,
+                summaryPdfPath = null,
+                summaryMdPath = summaryMdPath,
                 status = "SUCCEEDED",
                 lastError = null,
                 processingStage = null,

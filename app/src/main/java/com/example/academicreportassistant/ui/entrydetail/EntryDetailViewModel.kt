@@ -93,22 +93,13 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
             val pdfs = repo.getEntryPdfs(entryId)
             val hasImages = images.isNotEmpty()
             val hasPdfs = pdfs.isNotEmpty()
-            if (!hasImages && hasPdfs) {
-                _errorMessage.value = "仅有PDF时请使用“开始分析PDF并生成总结”并选择分析方式"
+            if (settings.generalModel.isBlank()) {
+                _errorMessage.value = "缺少通用模型"
                 return@launch
             }
-            if (hasImages && hasPdfs) {
-                if (settings.generalModel.isBlank()) {
-                    _errorMessage.value = "缺少通用模型（图片+PDF）"
-                    return@launch
-                }
-            } else {
+            if (hasImages && !hasPdfs) {
                 if (settings.visionModel.isBlank()) {
                     _errorMessage.value = "缺少视觉模型"
-                    return@launch
-                }
-                if (settings.textModel.isBlank()) {
-                    _errorMessage.value = "缺少文本模型"
                     return@launch
                 }
             }
@@ -122,42 +113,7 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
                 message = "已加入队列",
                 lastError = null,
             )
-            WorkEnqueuer.enqueueAnalyzeEntry(context, entryId, source = "auto", pdfMode = if (hasPdfs) "vision" else null)
-        }
-    }
-
-    fun startPdfAnalysis(context: Context, pdfMode: String) {
-        viewModelScope.launch {
-            val settings = AppContainer.settingsStore.modelSettings.first()
-            if (settings.baseUrl.isBlank() || settings.apiKey.isBlank()) {
-                _errorMessage.value = "缺少 baseUrl / apiKey"
-                return@launch
-            }
-            if (pdfMode == "direct") {
-                if (settings.textModel.isBlank()) {
-                    _errorMessage.value = "缺少文本模型"
-                    return@launch
-                }
-            } else {
-                if (settings.visionModel.isBlank()) {
-                    _errorMessage.value = "缺少视觉模型"
-                    return@launch
-                }
-                if (settings.textModel.isBlank()) {
-                    _errorMessage.value = "缺少文本模型"
-                    return@launch
-                }
-            }
-            repo.updateEntryProgress(
-                entryId = entryId,
-                status = "QUEUED",
-                stage = "QUEUED",
-                current = 0,
-                total = null,
-                message = "PDF已加入队列",
-                lastError = null,
-            )
-            WorkEnqueuer.enqueueAnalyzeEntry(context, entryId, source = "auto", pdfMode = pdfMode)
+            WorkEnqueuer.enqueueAnalyzeEntry(context, entryId, source = "auto")
         }
     }
 

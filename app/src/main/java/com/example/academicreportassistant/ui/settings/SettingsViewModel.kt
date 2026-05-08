@@ -23,7 +23,6 @@ class SettingsViewModel : ViewModel() {
                 apiKey = "",
                 generalModel = ModelProviderPreset.ZhiPu.defaultGeneralModel,
                 visionModel = ModelProviderPreset.ZhiPu.defaultVisionModel,
-                textModel = ModelProviderPreset.ZhiPu.defaultTextModel,
             ),
         )
 
@@ -36,7 +35,6 @@ class SettingsViewModel : ViewModel() {
         apiKey: String,
         generalModel: String,
         visionModel: String,
-        textModel: String,
     ) {
         viewModelScope.launch {
             store.update(
@@ -44,7 +42,6 @@ class SettingsViewModel : ViewModel() {
                 apiKey = apiKey,
                 generalModel = generalModel,
                 visionModel = visionModel,
-                textModel = textModel,
             )
         }
     }

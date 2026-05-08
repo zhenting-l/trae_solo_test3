@@ -45,6 +45,9 @@ interface EntryDao {
     @Query("SELECT COUNT(*) FROM entries WHERE title = :title")
     suspend fun countByTitle(title: String): Int
 
+    @Query("DELETE FROM entries WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("SELECT * FROM entries ORDER BY createdAtEpochMs DESC")
     fun observeAll(): Flow<List<EntryEntity>>
 
@@ -81,6 +84,9 @@ interface EntryImageDao {
 
     @Query("DELETE FROM entry_images WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM entry_images WHERE entryId = :entryId")
+    suspend fun deleteByEntry(entryId: String)
 
     @Query("SELECT * FROM entry_images WHERE entryId = :entryId ORDER BY createdAtEpochMs ASC")
     suspend fun getByEntry(entryId: String): List<EntryImageEntity>
@@ -132,6 +138,9 @@ interface EntrySummaryDao {
 
     @Query("SELECT * FROM entry_summaries WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): EntrySummaryEntity?
+
+    @Query("DELETE FROM entry_summaries WHERE entryId = :entryId")
+    suspend fun deleteByEntry(entryId: String)
 }
 
 @Dao
@@ -150,6 +159,9 @@ interface EntryPdfDao {
 
     @Query("DELETE FROM entry_pdfs WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM entry_pdfs WHERE entryId = :entryId")
+    suspend fun deleteByEntry(entryId: String)
 
     @Query("UPDATE entry_pdfs SET displayOrder = :displayOrder, localPath = :localPath WHERE id = :id")
     suspend fun updateOrderAndPath(id: String, displayOrder: Int, localPath: String)

@@ -24,6 +24,7 @@ data class EntryEntity(
     val keywords: String?,
     val finalSummary: String?,
     val summaryPdfPath: String?,
+    val summaryMdPath: String?,
 )
 
 @Entity(
@@ -68,6 +69,7 @@ data class EntrySummaryEntity(
     val keywords: String?,
     val finalSummary: String,
     val summaryPdfPath: String?,
+    val summaryMdPath: String?,
 )
 
 @Entity(

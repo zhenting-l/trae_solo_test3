@@ -11,7 +11,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lzt.summaryofslides.ui.entrydetail.EntryDetailScreen
 import com.lzt.summaryofslides.ui.entrylist.EntryListScreen
-import com.lzt.summaryofslides.ui.intermediate.IntermediateScreen
 import com.lzt.summaryofslides.ui.share.ShareScreen
 import com.lzt.summaryofslides.ui.shareimport.ShareImportScreen
 import com.lzt.summaryofslides.ui.shareimport.SharePayloadHolder
@@ -25,7 +24,6 @@ import com.lzt.summaryofslides.ui.summary.SummaryScreen
 object Routes {
     const val EntryList = "entry_list"
     const val EntryDetail = "entry_detail"
-    const val Intermediate = "intermediate"
     const val Summary = "summary"
     const val SummaryHistory = "summary_history"
     const val SummaryDetail = "summary_detail"
@@ -64,19 +62,8 @@ fun AppNav() {
                 entryId = entryId,
                 onBack = { navController.popBackStack() },
                 onShare = { navController.navigate("${Routes.Share}/$entryId") },
-                onOpenIntermediate = { navController.navigate("${Routes.Intermediate}/$entryId") },
                 onOpenSummary = { navController.navigate("${Routes.Summary}/$entryId") },
                 onOpenSummaryHistory = { navController.navigate("${Routes.SummaryHistory}/$entryId") },
-            )
-        }
-        composable(
-            route = "${Routes.Intermediate}/{entryId}",
-            arguments = listOf(navArgument("entryId") { type = NavType.StringType }),
-        ) { backStackEntry ->
-            val entryId = requireNotNull(backStackEntry.arguments?.getString("entryId"))
-            IntermediateScreen(
-                entryId = entryId,
-                onBack = { navController.popBackStack() },
             )
         }
         composable(

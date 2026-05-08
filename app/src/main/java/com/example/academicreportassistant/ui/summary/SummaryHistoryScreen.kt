@@ -29,7 +29,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
 import com.lzt.summaryofslides.data.AppContainer
 import com.lzt.summaryofslides.data.db.EntrySummaryEntity
-import com.lzt.summaryofslides.util.openPdf
+import com.lzt.summaryofslides.util.ShareUtil
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -105,13 +105,17 @@ fun SummaryHistoryScreen(
                             ) {
                                 Text("查看")
                             }
-                            val pdfPath = s.summaryPdfPath
+                            val mdPath = s.summaryMdPath
                             Button(
-                                onClick = { if (!pdfPath.isNullOrBlank()) openPdf(context, File(pdfPath)) },
-                                enabled = !pdfPath.isNullOrBlank(),
+                                onClick = {
+                                    if (!mdPath.isNullOrBlank()) {
+                                        ShareUtil.shareSingleFile(context, File(mdPath), "text/markdown")
+                                    }
+                                },
+                                enabled = !mdPath.isNullOrBlank(),
                                 modifier = Modifier.weight(1f),
                             ) {
-                                Text("打开PDF")
+                                Text("导出MD")
                             }
                         }
                     }

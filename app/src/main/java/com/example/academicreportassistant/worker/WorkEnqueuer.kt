@@ -26,7 +26,6 @@ object WorkEnqueuer {
         context: Context,
         entryId: String,
         source: String? = null,
-        pdfMode: String? = null,
     ) {
         val constraints =
             Constraints.Builder()
@@ -40,7 +39,6 @@ object WorkEnqueuer {
                     workDataOf(
                         "entryId" to entryId,
                         "source" to source,
-                        "pdfMode" to pdfMode,
                     ),
                 )
                 .addTag(AnalysisTag)

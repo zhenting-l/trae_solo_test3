@@ -40,7 +40,7 @@ fun ShareScreen(
     val context = LocalContext.current
 
     var selectedImageIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var includeSummaryPdf by remember { mutableStateOf(true) }
+    var includeSummaryMd by remember { mutableStateOf(true) }
     var includeSlidesPdf by remember { mutableStateOf(true) }
 
     Scaffold(
@@ -58,14 +58,14 @@ fun ShareScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            val summaryPath = entryState.value?.summaryPdfPath
+            val summaryPath = entryState.value?.summaryMdPath
             if (!summaryPath.isNullOrBlank() && File(summaryPath).exists()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Checkbox(checked = includeSummaryPdf, onCheckedChange = { includeSummaryPdf = it })
-                    Text("包含总结PDF")
+                    Checkbox(checked = includeSummaryMd, onCheckedChange = { includeSummaryMd = it })
+                    Text("包含总结Markdown")
                 }
             }
             if (pdfsState.value.isNotEmpty()) {
@@ -101,7 +101,7 @@ fun ShareScreen(
             }
 
             Button(
-                onClick = { vm.share(context, selectedImageIds, includeSummaryPdf, includeSlidesPdf) },
+                onClick = { vm.share(context, selectedImageIds, includeSummaryMd, includeSlidesPdf) },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("分享所选内容")
