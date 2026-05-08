@@ -142,6 +142,9 @@ interface EntrySummaryDao {
     @Query("SELECT COUNT(*) FROM entry_summaries WHERE entryId = :entryId")
     suspend fun countByEntry(entryId: String): Int
 
+    @Query("UPDATE entry_summaries SET summaryHtmlPath = :summaryHtmlPath WHERE id = :id")
+    suspend fun updateHtmlPath(id: String, summaryHtmlPath: String)
+
     @Query("DELETE FROM entry_summaries WHERE entryId = :entryId")
     suspend fun deleteByEntry(entryId: String)
 }

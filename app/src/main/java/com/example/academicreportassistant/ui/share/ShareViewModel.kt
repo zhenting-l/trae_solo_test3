@@ -9,6 +9,9 @@ import com.lzt.summaryofslides.data.db.EntryEntity
 import com.lzt.summaryofslides.data.db.EntryImageEntity
 import com.lzt.summaryofslides.data.db.EntryPdfEntity
 import com.lzt.summaryofslides.data.db.EntrySummaryEntity
+import com.lzt.summaryofslides.util.MarkdownHtmlTemplate
+import com.lzt.summaryofslides.util.MarkdownHtmlUtil
+import com.lzt.summaryofslides.util.MarkdownTidyUtil
 import com.lzt.summaryofslides.util.ShareUtil
 import com.lzt.summaryofslides.util.ZipUtil
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,34 +35,69 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
     val summaries: StateFlow<List<EntrySummaryEntity>> =
         repo.observeSummaries(entryId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    fun ensureSummaryHtmlFiles() {
+        viewModelScope.launch {
+            val list = summaries.value
+            for (s in list) {
+                if (!s.summaryHtmlPath.isNullOrBlank()) continue
+                val mdPath = s.summaryMdPath ?: continue
+                val mdFile = File(mdPath)
+                if (!mdFile.exists()) continue
+                val dir = mdFile.parentFile ?: repo.entryDir(entryId)
+                val htmlName = mdToHtmlName(mdFile.name)
+                val htmlFile = File(dir, htmlName)
+                if (!htmlFile.exists()) {
+                    val md = runCatching { mdFile.readText(Charsets.UTF_8) }.getOrNull() ?: continue
+                    val cleaned = MarkdownTidyUtil.tidy(md)
+                    val html = MarkdownHtmlTemplate.wrap(MarkdownHtmlUtil.toHtml(cleaned))
+                    runCatching { htmlFile.writeText(html, Charsets.UTF_8) }
+                }
+                if (htmlFile.exists()) {
+                    repo.updateSummaryHtmlPath(s.id, htmlFile.absolutePath)
+                }
+            }
+        }
+    }
+
     fun share(
         context: Context,
-        selectedImageIds: Set<String>,
-        selectedSummaryIds: Set<String>,
-        includeSlidesPdf: Boolean,
+        selectedSummaryMdIds: Set<String>,
+        selectedSummaryHtmlIds: Set<String>,
+        selectedUploadKeys: Set<String>,
     ) {
         viewModelScope.launch {
             val files = mutableListOf<Pair<File, String>>()
-            val chosenImages = images.value.filter { selectedImageIds.contains(it.id) }
+            val chosenMdSummaries = summaries.value.filter { selectedSummaryMdIds.contains(it.id) }
+            for (s in chosenMdSummaries) {
+                val mdPath = s.summaryMdPath ?: continue
+                val file = File(mdPath)
+                if (!file.exists()) continue
+                files += file to "summaries_md/${file.name}"
+            }
+
+            val chosenHtmlSummaries = summaries.value.filter { selectedSummaryHtmlIds.contains(it.id) }
+            for (s in chosenHtmlSummaries) {
+                val htmlPath = s.summaryHtmlPath ?: continue
+                val file = File(htmlPath)
+                if (!file.exists()) continue
+                files += file to "summaries_html/${file.name}"
+            }
+
+            val chosenImages =
+                images.value.filter { selectedUploadKeys.contains("img:${it.id}") }
             for ((idx, img) in chosenImages.withIndex()) {
                 val order = img.displayOrder ?: (idx + 1)
                 val name = img.displayName?.ifBlank { null } ?: "图片$order"
                 val fileName = "${order}-${sanitizeFileName(name)}.jpg"
-                files += File(img.localPath) to "images/$fileName"
+                files += File(img.localPath) to "uploads/$fileName"
             }
 
-            val chosenSummaries = summaries.value.filter { selectedSummaryIds.contains(it.id) }
-            for (s in chosenSummaries) {
-                val mdPath = s.summaryMdPath ?: continue
-                val file = File(mdPath)
-                if (!file.exists()) continue
-                files += file to "summaries/${file.name}"
-            }
-
-            if (includeSlidesPdf) {
-                for (pdf in pdfs.value) {
-                    files += File(pdf.localPath) to "slides_${pdf.displayOrder}.pdf"
-                }
+            val chosenPdfs =
+                pdfs.value.filter { selectedUploadKeys.contains("pdf:${it.id}") }
+            for (pdf in chosenPdfs) {
+                val rawName = pdf.displayName?.ifBlank { null } ?: "slides_${pdf.displayOrder}.pdf"
+                val fileName = sanitizeFileName(rawName)
+                files += File(pdf.localPath) to "uploads/$fileName"
             }
 
             if (files.isEmpty()) return@launch
@@ -71,10 +109,12 @@ class ShareViewModel(private val entryId: String) : ViewModel() {
                         name.endsWith(".pdf") -> "application/pdf"
                         name.endsWith(".jpg") || name.endsWith(".jpeg") -> "image/jpeg"
                         name.endsWith(".md") -> "text/markdown"
+                        name.endsWith(".html") || name.endsWith(".htm") -> "text/html"
                         else -> "application/octet-stream"
                     }
                 ShareUtil.shareSingleFile(context, file, mimeType)
             } else {
+                val chosenSummaries = chosenMdSummaries + chosenHtmlSummaries
                 val baseTitle =
                     (chosenSummaries.singleOrNull()?.shortTitle
                         ?: chosenSummaries.singleOrNull()?.talkTitle
@@ -98,6 +138,17 @@ class ShareViewModelFactory(private val entryId: String) : ViewModelProvider.Fac
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return ShareViewModel(entryId) as T
     }
+}
+
+private fun mdToHtmlName(mdName: String): String {
+    val m = Regex("""^S(\d+)-(.*)\.md$""").find(mdName)
+    if (m != null) {
+        val idx = m.groupValues[1]
+        val rest = m.groupValues[2]
+        return "H$idx-$rest.html"
+    }
+    val stem = mdName.removeSuffix(".md")
+    return "H-$stem.html"
 }
 
 private fun sanitizeFileName(raw: String): String {

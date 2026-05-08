@@ -1,6 +1,10 @@
 package com.lzt.summaryofslides.worker
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.lzt.summaryofslides.data.AppContainer
@@ -9,6 +13,8 @@ import com.lzt.summaryofslides.data.db.EntryPdfEntity
 import com.lzt.summaryofslides.data.db.SlideAnalysisEntity
 import com.lzt.summaryofslides.llm.OpenAiCompatClient
 import com.lzt.summaryofslides.util.ImageTranscodeUtil
+import com.lzt.summaryofslides.util.MarkdownHtmlUtil
+import com.lzt.summaryofslides.util.MarkdownHtmlTemplate
 import com.lzt.summaryofslides.util.MarkdownTidyUtil
 import com.lzt.summaryofslides.util.NotificationUtil
 import android.app.NotificationManager
@@ -24,6 +30,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.UUID
 
@@ -126,23 +133,94 @@ class AnalyzeEntryWorker(
                             pdfFiles = pdfFiles,
                         )
                     }.getOrElse { e ->
-                        repo.updateEntryProgress(
+                        if (settings.visionModel.isBlank()) {
+                            repo.updateEntryProgress(
+                                entryId = entryId,
+                                status = "FAILED",
+                                stage = "CALL_GENERAL",
+                                current = null,
+                                total = null,
+                                message = "通用模型不支持PDF直传，请配置视觉模型以回退解析",
+                                lastError = e.message,
+                            )
+                            return Result.failure()
+                        }
+
+                        updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF直传失败，回退为逐页视觉解析")
+                        val pageFiles = renderPdfToImageFiles(repo, entryId, pdfFiles)
+                        val imagesForAnalysis =
+                            pageFiles.mapIndexed { idx, file ->
+                                ImageForAnalysis(
+                                    entity =
+                                        EntryImageEntity(
+                                            id = "pdfpage-${idx + 1}",
+                                            entryId = entryId,
+                                            localPath = file.absolutePath,
+                                            createdAtEpochMs = System.currentTimeMillis() + idx,
+                                            pageIndex = idx + 1,
+                                            displayOrder = idx + 1,
+                                            displayName = null,
+                                        ),
+                                    jpegBytes = null,
+                                )
+                            }
+                        val payload = runCatching {
+                            analyzeImagesAndMerge(
+                                repo = repo,
+                                llm = llm,
+                                json = json,
+                                entryId = entryId,
+                                baseUrl = baseUrl,
+                                apiKey = apiKey,
+                                imagesForAnalysis = imagesForAnalysis,
+                                visionModel = settings.visionModel,
+                                generalModel = settings.generalModel,
+                                mergeWithPdfs = false,
+                                pdfFiles = emptyList(),
+                            )
+                        }.getOrElse { t ->
+                            repo.updateEntryProgress(
+                                entryId = entryId,
+                                status = "FAILED",
+                                stage = "FAILED",
+                                current = null,
+                                total = null,
+                                message = "处理失败",
+                                lastError = t.message,
+                            )
+                            return Result.failure()
+                        }
+
+                        val mdIndex = repo.getSummaryCount(entryId) + 1
+                        val mdFile = summaryMarkdownFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
+                        val htmlFile = summaryHtmlFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
+                        val cleaned = MarkdownTidyUtil.tidy(payload.finalSummaryMarkdown)
+                        writeUtf8(mdFile, cleaned)
+                        val html = MarkdownHtmlTemplate.wrap(MarkdownHtmlUtil.toHtml(cleaned))
+                        writeUtf8(htmlFile, html)
+                        repo.setFinalResult(
                             entryId = entryId,
-                            status = "FAILED",
-                            stage = "CALL_GENERAL",
-                            current = null,
-                            total = null,
-                            message = "通用模型不支持PDF直传或PDF过大",
-                            lastError = e.message,
+                            shortTitle = payload.shortTitle,
+                            speakerName = payload.speakerName,
+                            speakerAffiliation = payload.speakerAffiliation,
+                            talkTitle = payload.talkTitle,
+                            keywords = payload.keywords,
+                            finalSummary = cleaned,
+                            summaryMdPath = mdFile.absolutePath,
+                            summaryHtmlPath = htmlFile.absolutePath,
                         )
-                        return Result.failure()
+                        clearProgressNotification(entryId)
+                        return Result.success()
                     }
 
                 val payload = parseSummaryPayload(json, finalRaw)
                 val mdIndex = repo.getSummaryCount(entryId) + 1
                 val mdFile = summaryMarkdownFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
+                val htmlFile = summaryHtmlFile(repo, entryId, mdIndex, payload.shortTitle ?: payload.talkTitle)
                 val cleaned = MarkdownTidyUtil.tidy(payload.finalSummaryMarkdown)
                 writeUtf8(mdFile, cleaned)
+                val html = MarkdownHtmlTemplate.wrap(MarkdownHtmlUtil.toHtml(cleaned))
+                writeUtf8(htmlFile, html)
                 repo.setFinalResult(
                     entryId = entryId,
                     shortTitle = payload.shortTitle,
@@ -152,6 +230,7 @@ class AnalyzeEntryWorker(
                     keywords = payload.keywords,
                     finalSummary = cleaned,
                     summaryMdPath = mdFile.absolutePath,
+                    summaryHtmlPath = htmlFile.absolutePath,
                 )
                 clearProgressNotification(entryId)
                 return Result.success()
@@ -163,77 +242,20 @@ class AnalyzeEntryWorker(
             updateProgress(repo, entryId, "PROCESSING", "PRECHECK", 0, imagesForAnalysis.size, "准备开始")
             repo.clearSlideAnalyses(entryId)
 
-            val slideAnalyses = mutableListOf<SlideAnalysisEntity>()
-            val compactForMerge = StringBuilder()
-            val visionModelForAnalysis =
-                if (hasImages && hasPdfs) settings.generalModel else settings.visionModel
-            for ((idx, img) in imagesForAnalysis.withIndex()) {
-                val page = idx + 1
-                updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", page, imagesForAnalysis.size, "第 $page 页：准备图片")
-                val bytes =
-                    img.jpegBytes
-                        ?: withContext(Dispatchers.IO) {
-                            ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath))
-                        }
-                val prompt = slidePrompt(page)
-                updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", page, imagesForAnalysis.size, "第 $page 页：调用视觉模型")
-                val content =
-                    llm.visionChatCompletion(
-                        baseUrl = baseUrl,
-                        apiKey = apiKey,
-                        model = visionModelForAnalysis,
-                        prompt = prompt,
-                        jpegBytes = bytes,
-                    )
-                updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
-                slideAnalyses +=
-                    SlideAnalysisEntity(
-                        id = UUID.randomUUID().toString(),
-                        entryId = entryId,
-                        imageId = img.entity.id,
-                        extractedJson = content,
-                        extractedText = null,
-                        createdAtEpochMs = System.currentTimeMillis(),
-                    )
-                compactForMerge.append("Slide ").append(page).append(":\n").append(content).append("\n\n")
-            }
-
-            repo.saveSlideAnalyses(slideAnalyses)
-
-            updateProgress(repo, entryId, "PROCESSING", "MERGE_SUMMARY", null, null, "融合信息与生成总结")
-            val finalRaw =
-                if (hasImages && hasPdfs) {
-                    updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（PDF直传）")
-                    runCatching {
-                        llm.visionChatCompletionWithPdfFiles(
-                            baseUrl = baseUrl,
-                            apiKey = apiKey,
-                            model = settings.generalModel,
-                            prompt = finalPromptWithPdfs(compactForMerge.toString()),
-                            pdfFiles = pdfFiles,
-                        )
-                    }.getOrElse { e ->
-                        repo.updateEntryProgress(
-                            entryId = entryId,
-                            status = "FAILED",
-                            stage = "CALL_GENERAL",
-                            current = null,
-                            total = null,
-                            message = "通用模型不支持PDF直传或PDF过大",
-                            lastError = e.message,
-                        )
-                        return Result.failure()
-                    }
-                } else {
-                    llm.textChatCompletion(
-                        baseUrl = baseUrl,
-                        apiKey = apiKey,
-                        model = settings.generalModel,
-                        prompt = finalPrompt(compactForMerge.toString()),
-                    )
-                }
-
-            val payload = parseSummaryPayload(json, finalRaw)
+            val payload =
+                analyzeImagesAndMerge(
+                    repo = repo,
+                    llm = llm,
+                    json = json,
+                    entryId = entryId,
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    imagesForAnalysis = imagesForAnalysis,
+                    visionModel = settings.visionModel,
+                    generalModel = settings.generalModel,
+                    mergeWithPdfs = hasImages && hasPdfs,
+                    pdfFiles = pdfFiles,
+                )
             val shortTitle = payload.shortTitle
             val speakerName = payload.speakerName
             val speakerAffiliation = payload.speakerAffiliation
@@ -251,8 +273,11 @@ class AnalyzeEntryWorker(
             updateProgress(repo, entryId, "PROCESSING", "GENERATE_FILE", null, null, "生成Markdown文件")
             val mdIndex = repo.getSummaryCount(entryId) + 1
             val mdFile = summaryMarkdownFile(repo, entryId, mdIndex, shortTitle ?: talkTitle)
+            val htmlFile = summaryHtmlFile(repo, entryId, mdIndex, shortTitle ?: talkTitle)
             val cleaned = MarkdownTidyUtil.tidy(finalSummary)
             writeUtf8(mdFile, cleaned)
+            val html = MarkdownHtmlTemplate.wrap(MarkdownHtmlUtil.toHtml(cleaned))
+            writeUtf8(htmlFile, html)
 
             updateProgress(repo, entryId, "PROCESSING", "SAVE_RESULT", null, null, "保存结果")
             repo.setFinalResult(
@@ -264,6 +289,7 @@ class AnalyzeEntryWorker(
                 keywords = keywords,
                 finalSummary = cleaned,
                 summaryMdPath = mdFile.absolutePath,
+                summaryHtmlPath = htmlFile.absolutePath,
             )
 
             clearProgressNotification(entryId)
@@ -342,6 +368,150 @@ class AnalyzeEntryWorker(
         val talkTitle = extractLooseJsonString(raw, "talk_title")
         val md = extractMarkdownFallback(raw)
         return SummaryPayload(shortTitle, speakerName, speakerAffiliation, talkTitle, null, md, emptyMap())
+    }
+
+    private suspend fun analyzeImagesAndMerge(
+        repo: com.lzt.summaryofslides.data.repo.EntryRepository,
+        llm: OpenAiCompatClient,
+        json: Json,
+        entryId: String,
+        baseUrl: String,
+        apiKey: String,
+        imagesForAnalysis: List<ImageForAnalysis>,
+        visionModel: String,
+        generalModel: String,
+        mergeWithPdfs: Boolean,
+        pdfFiles: List<File>,
+    ): SummaryPayload {
+        val slideAnalyses = mutableListOf<SlideAnalysisEntity>()
+        val compactForMerge = StringBuilder()
+        for ((idx, img) in imagesForAnalysis.withIndex()) {
+            val page = idx + 1
+            updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", page, imagesForAnalysis.size, "第 $page 页：准备图片")
+            val bytes =
+                img.jpegBytes
+                    ?: withContext(Dispatchers.IO) {
+                        ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath))
+                    }
+            val prompt = slidePrompt(page)
+            updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", page, imagesForAnalysis.size, "第 $page 页：调用视觉模型")
+            val content =
+                llm.visionChatCompletion(
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    model = visionModel,
+                    prompt = prompt,
+                    jpegBytes = bytes,
+                )
+            updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
+            slideAnalyses +=
+                SlideAnalysisEntity(
+                    id = UUID.randomUUID().toString(),
+                    entryId = entryId,
+                    imageId = img.entity.id,
+                    extractedJson = content,
+                    extractedText = null,
+                    createdAtEpochMs = System.currentTimeMillis(),
+                )
+            compactForMerge.append("Slide ").append(page).append(":\n").append(content).append("\n\n")
+        }
+
+        repo.saveSlideAnalyses(slideAnalyses)
+
+        updateProgress(repo, entryId, "PROCESSING", "MERGE_SUMMARY", null, null, "融合信息与生成总结")
+        val finalRaw =
+            if (mergeWithPdfs) {
+                updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（PDF直传）")
+                runCatching {
+                    llm.visionChatCompletionWithPdfFiles(
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        model = generalModel,
+                        prompt = finalPromptWithPdfs(compactForMerge.toString()),
+                        pdfFiles = pdfFiles,
+                    )
+                }.getOrElse {
+                    updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF直传失败，回退为仅基于图片总结")
+                    llm.textChatCompletion(
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        model = generalModel,
+                        prompt = finalPrompt(compactForMerge.toString()),
+                    )
+                }
+            } else {
+                llm.textChatCompletion(
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    model = generalModel,
+                    prompt = finalPrompt(compactForMerge.toString()),
+                )
+            }
+        return parseSummaryPayload(json, finalRaw)
+    }
+
+    private suspend fun renderPdfToImageFiles(
+        repo: com.lzt.summaryofslides.data.repo.EntryRepository,
+        entryId: String,
+        pdfFiles: List<File>,
+    ): List<File> {
+        val pagesDir = repo.entryPdfPagesDir(entryId)
+        pagesDir.deleteRecursively()
+        pagesDir.mkdirs()
+        val outFiles = mutableListOf<File>()
+        val maxTotalPages = 60
+        val totalPages = pdfFiles.sumOf { file -> countPdfPages(file) }.coerceAtLeast(1).coerceAtMost(maxTotalPages)
+        var renderedCount = 0
+        outer@ for ((pdfIdx, pdfFile) in pdfFiles.withIndex()) {
+            if (!pdfFile.exists()) continue
+            val fd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            try {
+                val renderer = PdfRenderer(fd)
+                try {
+                    val pageCount = renderer.pageCount
+                    for (i in 0 until pageCount) {
+                        if (renderedCount >= maxTotalPages) break@outer
+                        renderedCount += 1
+                        updateProgress(repo, entryId, "PROCESSING", "RENDER_PDF", renderedCount, totalPages, "渲染PDF（$renderedCount/$totalPages）")
+                        val pageIndex = i + 1
+                        val page = renderer.openPage(i)
+                        val maxSide = 1280f
+                        val scale =
+                            (maxSide / maxOf(page.width, page.height).toFloat()).coerceAtMost(1f).coerceAtLeast(0.1f)
+                        val bmpW = (page.width * scale).toInt().coerceAtLeast(1)
+                        val bmpH = (page.height * scale).toInt().coerceAtLeast(1)
+                        val bitmap = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+                        val matrix = Matrix().apply { setScale(scale, scale) }
+                        page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        page.close()
+
+                        val baos = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos)
+                        bitmap.recycle()
+                        val bytes = baos.toByteArray()
+
+                        val outFile = File(pagesDir, "pdf${pdfIdx + 1}_page_$pageIndex.jpg")
+                        outFile.outputStream().use { it.write(bytes) }
+                        outFiles += outFile
+                    }
+                } finally {
+                    renderer.close()
+                }
+            } finally {
+                fd.close()
+            }
+        }
+        return outFiles
+    }
+
+    private fun countPdfPages(file: File): Int {
+        if (!file.exists()) return 0
+        val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        pfd.use { fd ->
+            PdfRenderer(fd).use { renderer ->
+                return renderer.pageCount
+            }
+        }
     }
 
     private fun extractLooseJsonString(raw: String, key: String): String? {
@@ -490,6 +660,17 @@ ${allSlides.take(120_000)}
         val base = sanitizeFileStem(title ?: "summary")
         val prefix = "S$index-"
         return File(repo.entryDir(entryId), "$prefix$base.md")
+    }
+
+    private fun summaryHtmlFile(
+        repo: com.lzt.summaryofslides.data.repo.EntryRepository,
+        entryId: String,
+        index: Int,
+        title: String?,
+    ): File {
+        val base = sanitizeFileStem(title ?: "summary")
+        val prefix = "H$index-"
+        return File(repo.entryDir(entryId), "$prefix$base.html")
     }
 
     private fun sanitizeFileStem(raw: String): String {

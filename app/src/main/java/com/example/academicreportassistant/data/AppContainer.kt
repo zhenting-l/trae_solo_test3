@@ -121,11 +121,19 @@ object AppContainer {
             }
         }
 
+    private val MIGRATION_7_8 =
+        object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entries ADD COLUMN summaryHtmlPath TEXT")
+                db.execSQL("ALTER TABLE entry_summaries ADD COLUMN summaryHtmlPath TEXT")
+            }
+        }
+
     fun init(context: Context) {
         appContext = context.applicationContext
         database =
             Room.databaseBuilder(appContext, AppDatabase::class.java, "app.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
         settingsStore = SettingsStore(appContext)
         entryRepository = EntryRepository(

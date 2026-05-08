@@ -48,6 +48,10 @@ class EntryRepository(
     suspend fun getSummaryCount(entryId: String): Int =
         db.entrySummaryDao().countByEntry(entryId)
 
+    suspend fun updateSummaryHtmlPath(summaryId: String, summaryHtmlPath: String) {
+        db.entrySummaryDao().updateHtmlPath(summaryId, summaryHtmlPath)
+    }
+
     fun observeSummaryCount(entryId: String): Flow<Int> =
         db.entrySummaryDao().observeCountByEntry(entryId)
 
@@ -78,6 +82,7 @@ class EntryRepository(
                 finalSummary = null,
                 summaryPdfPath = null,
                 summaryMdPath = null,
+                summaryHtmlPath = null,
             ),
         )
         ensureEntryDir(id)
@@ -214,6 +219,7 @@ class EntryRepository(
         keywords: String?,
         finalSummary: String,
         summaryMdPath: String?,
+        summaryHtmlPath: String?,
     ) {
         val entry = requireNotNull(db.entryDao().getById(entryId))
         val now = System.currentTimeMillis()
@@ -238,6 +244,7 @@ class EntryRepository(
                 finalSummary = finalSummary,
                 summaryPdfPath = null,
                 summaryMdPath = summaryMdPath,
+                summaryHtmlPath = summaryHtmlPath,
             ),
         )
         db.entryDao().upsert(
@@ -251,6 +258,7 @@ class EntryRepository(
                 finalSummary = finalSummary,
                 summaryPdfPath = null,
                 summaryMdPath = summaryMdPath,
+                summaryHtmlPath = summaryHtmlPath,
                 status = "SUCCEEDED",
                 lastError = null,
                 processingStage = null,

@@ -97,7 +97,7 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
                 _errorMessage.value = "缺少通用模型"
                 return@launch
             }
-            if (hasImages && !hasPdfs) {
+            if (hasImages) {
                 if (settings.visionModel.isBlank()) {
                     _errorMessage.value = "缺少视觉模型"
                     return@launch

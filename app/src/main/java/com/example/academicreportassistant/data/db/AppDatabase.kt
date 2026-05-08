@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         EntrySummaryEntity::class,
         EntryPdfEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
