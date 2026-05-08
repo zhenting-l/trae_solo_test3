@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 import androidx.work.workDataOf
 
 object WorkEnqueuer {
+    private const val AnalysisTag = "analysis"
 
     fun cancelAnalyzeEntry(context: Context, entryId: String) {
         WorkManager.getInstance(context).cancelUniqueWork("analyze-$entryId")
