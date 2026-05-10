@@ -117,5 +117,7 @@ dependencies {
 
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.pdfium.android)
+    implementation(libs.pdfium.android) {
+        exclude(group = "com.android.support")
+    }
 }
