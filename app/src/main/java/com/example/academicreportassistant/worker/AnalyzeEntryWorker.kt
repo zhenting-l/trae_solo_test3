@@ -251,8 +251,6 @@ class AnalyzeEntryWorker(
                 repo.updateImageDisplay(img.entity.id, displayOrder = order, displayName = displayName)
                 renameImageFileIfPossible(repo, entryId, img.entity.id, order, displayName)
             }
-                renameImageFileIfPossible(repo, entryId, img.entity.id, order, displayName)
-            }
 
             updateProgress(repo, entryId, "PROCESSING", "GENERATE_FILE", null, null, "生成Markdown文件")
             val mdIndex = repo.getSummaryCount(entryId) + 1
