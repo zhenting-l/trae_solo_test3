@@ -25,7 +25,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -89,7 +88,6 @@ fun EntryDetailScreen(
     var continuousCapture by remember { mutableStateOf(false) }
     var showAnalysisOptionsDialog by remember { mutableStateOf(false) }
     var batchImages by remember { mutableStateOf(false) }
-    var incrementalSummary by remember { mutableStateOf(false) }
 
     val takePictureLauncherRef =
         remember { mutableStateOf<ManagedActivityResultLauncher<Uri, Boolean>?>(null) }
@@ -219,20 +217,53 @@ fun EntryDetailScreen(
                 Text("附加提示词$hint")
             }
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Button(
+                    onClick = { batchImages = false },
+                    modifier = Modifier.weight(1f),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor =
+                                if (!batchImages) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            contentColor = if (!batchImages) Color.White else Color.Black,
+                        ),
+                ) {
+                    Text("逐张输入")
+                }
+                Button(
+                    onClick = { batchImages = true },
+                    modifier = Modifier.weight(1f),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor =
+                                if (batchImages) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            contentColor = if (batchImages) Color.White else Color.Black,
+                        ),
+                ) {
+                    Text("批量输入")
+                }
+            }
+
             Button(
                 onClick = {
                     val entry = entryState.value
                     val status = entry?.status ?: "-"
-                    val hasImages = imagesState.value.isNotEmpty()
-                    val hasPdfs = pdfsState.value.isNotEmpty()
                     if (status == "QUEUED" || status == "PROCESSING") {
                         vm.cancelAnalysis(context)
                     } else {
-                        if (summaryCountState.value >= 1) {
-                            incrementalSummary = false
+                        if (summaryCountState.value == 0) {
+                            vm.startAnalysis(
+                                context = context,
+                                extraPrompt = extraPrompt.text,
+                                batchImages = batchImages,
+                                incremental = false,
+                            )
+                        } else {
+                            showAnalysisOptionsDialog = true
                         }
-                        batchImages = false
-                        showAnalysisOptionsDialog = true
                     }
                 },
                 enabled =
@@ -260,20 +291,9 @@ fun EntryDetailScreen(
             if (showAnalysisOptionsDialog) {
                 AlertDialog(
                     onDismissRequest = { showAnalysisOptionsDialog = false },
-                    title = { Text("开始分析选项") },
+                    title = { Text("选择总结方式") },
                     text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = batchImages, onCheckedChange = { batchImages = it })
-                                Text("一次性输入全部图片")
-                            }
-                            if (summaryCountState.value >= 1) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(checked = incrementalSummary, onCheckedChange = { incrementalSummary = it })
-                                    Text("增量总结（仅分析新增图片）")
-                                }
-                            }
-                        }
+                        Text("重新总结：全部图片重新分析\n增量总结：仅分析新增图片并融合上次总结")
                     },
                     confirmButton = {
                         Button(
@@ -283,13 +303,26 @@ fun EntryDetailScreen(
                                     context = context,
                                     extraPrompt = extraPrompt.text,
                                     batchImages = batchImages,
-                                    incremental = incrementalSummary,
+                                    incremental = false,
                                 )
                             },
-                        ) { Text("开始") }
+                        ) { Text("重新总结") }
                     },
                     dismissButton = {
-                        Button(onClick = { showAnalysisOptionsDialog = false }) { Text("取消") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = {
+                                    showAnalysisOptionsDialog = false
+                                    vm.startAnalysis(
+                                        context = context,
+                                        extraPrompt = extraPrompt.text,
+                                        batchImages = batchImages,
+                                        incremental = true,
+                                    )
+                                },
+                            ) { Text("增量总结") }
+                            Button(onClick = { showAnalysisOptionsDialog = false }) { Text("取消") }
+                        }
                     },
                 )
             }

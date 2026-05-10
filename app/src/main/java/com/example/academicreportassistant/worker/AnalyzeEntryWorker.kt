@@ -243,13 +243,16 @@ class AnalyzeEntryWorker(
             val keywords = payload.keywords
             val finalSummary = payload.finalSummaryMarkdown
             val slideNames = payload.slideNames
+            val slideAnalysesByImageId = repo.getSlideAnalyses(entryId).associateBy { it.imageId }
 
             for ((idx, img) in imagesForAnalysis.withIndex()) {
                 val order = idx + 1
-                val rawName = slideNames[order] ?: "第${order}页"
+                val fromAnalysis =
+                    slideAnalysesByImageId[img.entity.id]?.extractedJson?.let { extractBriefFromSlideAnalysisJson(json, it) }
+                val rawName = fromAnalysis ?: slideNames[order] ?: "第${order}页"
                 val displayName = normalizeSlideName(rawName)
                 repo.updateImageDisplay(img.entity.id, displayOrder = order, displayName = displayName)
-                renameImageFileIfPossible(repo, entryId, img.entity.id, order, displayName)
+                renameImageFileIfPossible(repo, entryId, img.entity.localPath, img.entity.id, order, displayName)
             }
 
             updateProgress(repo, entryId, "PROCESSING", "GENERATE_FILE", null, null, "生成Markdown文件")
@@ -512,7 +515,7 @@ ${pdfMd.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
 }
 
 上一次总结：
@@ -537,7 +540,7 @@ ${allSlides.take(120_000)}
   "section": "本页所属章节/主题(可空)",
   "main_points": ["要点1","要点2"],
   "methods": ["方法/模型/算法(可空)"],
-  "equations": ["公式/符号解释(可空)"],
+  "equations": ["公式/符号解释(可空)。将识别内容转为LaTeX时注意上下标位置，使用^和_并配合花括号：x_{k}, x^{k}"],
   "figures": ["图表/示意图描述(可空)"],
   "citations": ["出现的论文/作者/会议期刊/DOI/链接线索(可空)"],
   "terms": ["术语及简短解释(可空)"],
@@ -551,6 +554,22 @@ ${allSlides.take(120_000)}
         val el = runCatching { json.parseToJsonElement(block) }.getOrNull() ?: return emptyList()
         val arr = el as? kotlinx.serialization.json.JsonArray ?: return emptyList()
         return arr.map { it.toString() }
+    }
+
+    private fun extractBriefFromSlideAnalysisJson(json: Json, raw: String): String? {
+        val block = extractJsonBlock(raw) ?: raw
+        val obj = runCatching { json.parseToJsonElement(block).jsonObject }.getOrNull() ?: return null
+        val section = obj["section"]?.stringOrNull()?.trim().orEmpty()
+        val main =
+            obj["main_points"]
+                ?.jsonArray
+                ?.firstOrNull()
+                ?.jsonPrimitive
+                ?.content
+                ?.trim()
+                .orEmpty()
+        val pick = (if (section.isNotBlank()) section else main).trim()
+        return pick.takeIf { it.isNotBlank() }
     }
 
     private suspend fun renderPdfToImageFiles(
@@ -667,7 +686,7 @@ ${allSlides.take(120_000)}
   "section": "本页所属章节/主题(可空)",
   "main_points": ["要点1","要点2"],
   "methods": ["方法/模型/算法(可空)"],
-  "equations": ["公式/符号解释(可空)"],
+  "equations": ["公式/符号解释(可空)。将识别内容转为LaTeX时注意上下标位置，使用^和_并配合花括号：x_{k}, x^{k}"],
   "figures": ["图表/示意图描述(可空)"],
   "citations": ["出现的论文/作者/会议期刊/DOI/链接线索(可空)"],
   "terms": ["术语及简短解释(可空)"],
@@ -686,7 +705,7 @@ ${allSlides.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：
@@ -703,7 +722,7 @@ ${allSlides.take(120_000)}
   "speaker_affiliation": "单位/机构(若无法确定则空字符串)",
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
 }
 """.trimIndent()
     }
@@ -718,7 +737,7 @@ ${allSlides.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：
@@ -853,12 +872,13 @@ ${md.take(120_000)}
     private suspend fun renameImageFileIfPossible(
         repo: com.lzt.summaryofslides.data.repo.EntryRepository,
         entryId: String,
+        currentPath: String,
         imageId: String,
         order: Int,
         displayName: String,
     ) {
         val imagesDir = repo.entryImagesDir(entryId)
-        val current = File(imagesDir, "$imageId.jpg")
+        val current = File(currentPath)
         if (!current.exists()) return
         val stem = sanitizeFileStem(displayName).take(40)
         val target = File(imagesDir, "${order}-${stem}.jpg")
