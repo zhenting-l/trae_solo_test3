@@ -100,8 +100,13 @@ dependencies {
     implementation(libs.markwon.image)
     implementation(libs.markwon.ext.latex)
     implementation(libs.markwon.ext.tables)
+    implementation(libs.markwon.ext.strikethrough)
+    implementation(libs.markwon.ext.tasklist)
     implementation(libs.markwon.image.coil)
     implementation(libs.commonmark)
+    implementation(libs.commonmark.ext.gfm.strikethrough)
+    implementation(libs.commonmark.ext.gfm.tables)
+    implementation(libs.commonmark.ext.autolink)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

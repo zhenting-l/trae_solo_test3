@@ -10,10 +10,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -31,6 +33,7 @@ import com.lzt.summaryofslides.util.MarkdownTidyUtil
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -57,8 +60,15 @@ fun SummaryDetailScreen(
 ) {
     val vm: SummaryDetailViewModel = viewModel(factory = SummaryDetailViewModelFactory(summaryId))
     val summaryState = vm.summary.collectAsState()
+    val settingsState = AppContainer.settingsStore.modelSettings.collectAsState(initial = null)
     val markdown = MarkdownTidyUtil.tidy(normalizeStoredMarkdown(summaryState.value?.finalSummary.orEmpty()))
     var useWebView by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(settingsState.value) {
+        val prefer = settingsState.value?.preferWebViewMarkdown ?: return@LaunchedEffect
+        useWebView = prefer
+    }
 
     Scaffold(
         topBar = {
@@ -66,7 +76,15 @@ fun SummaryDetailScreen(
                 title = { Text("总结（历史）") },
                 navigationIcon = { Button(onClick = onBack) { Text("返回") } },
                 actions = {
-                    Button(onClick = { useWebView = !useWebView }) {
+                    Button(
+                        onClick = {
+                            val next = !useWebView
+                            useWebView = next
+                            scope.launch {
+                                AppContainer.settingsStore.update(preferWebViewMarkdown = next)
+                            }
+                        },
+                    ) {
                         Text(if (useWebView) "原生" else "网页")
                     }
                 },

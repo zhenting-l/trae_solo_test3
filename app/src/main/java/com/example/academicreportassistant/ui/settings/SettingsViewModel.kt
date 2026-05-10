@@ -24,6 +24,7 @@ class SettingsViewModel : ViewModel() {
                 generalModel = ModelProviderPreset.ZhiPu.defaultGeneralModel,
                 visionModel = ModelProviderPreset.ZhiPu.defaultVisionModel,
                 enableWebEnrichment = false,
+                preferWebViewMarkdown = true,
             ),
         )
 
@@ -37,6 +38,7 @@ class SettingsViewModel : ViewModel() {
         generalModel: String,
         visionModel: String,
         enableWebEnrichment: Boolean,
+        preferWebViewMarkdown: Boolean,
     ) {
         viewModelScope.launch {
             store.update(
@@ -45,6 +47,7 @@ class SettingsViewModel : ViewModel() {
                 generalModel = generalModel,
                 visionModel = visionModel,
                 enableWebEnrichment = enableWebEnrichment,
+                preferWebViewMarkdown = preferWebViewMarkdown,
             )
         }
     }

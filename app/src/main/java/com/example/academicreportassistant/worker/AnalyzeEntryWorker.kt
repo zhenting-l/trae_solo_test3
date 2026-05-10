@@ -406,64 +406,73 @@ class AnalyzeEntryWorker(
         val newAnalyses = mutableListOf<SlideAnalysisEntity>()
         if (newItems.isNotEmpty()) {
             if (batchImages && newItems.size >= 2) {
-                updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", 0, newItems.size, "准备图片（批量）")
-                val bytesList =
-                    newItems.map { (_, img) ->
-                        img.jpegBytes
-                            ?: withContext(Dispatchers.IO) { ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath)) }
-                    }
-                val prompt = withExtraPrompt(slidePromptBatch(newItems.map { it.first }), extraPrompt)
-                updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", 0, newItems.size, "调用视觉模型（批量）")
-                val content =
-                    llm.visionChatCompletionWithJpegBytesList(
-                        baseUrl = baseUrl,
-                        apiKey = apiKey,
-                        model = visionModel,
-                        prompt = prompt,
-                        jpegBytesList = bytesList,
-                    )
-                val parsed = parseBatchSlideJson(json, content)
-                val batchOk = parsed.isNotEmpty() && parsed.size == newItems.size
-                if (batchOk) {
-                    for ((idx, item) in parsed.withIndex()) {
-                        val (page, img) = newItems.getOrNull(idx) ?: continue
-                        newAnalyses +=
-                            SlideAnalysisEntity(
-                                id = UUID.randomUUID().toString(),
-                                entryId = entryId,
-                                imageId = img.entity.id,
-                                extractedJson = item,
-                                extractedText = null,
-                                createdAtEpochMs = System.currentTimeMillis() + page,
-                            )
-                    }
-                } else {
-                    updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "批量解析失败，回退为逐页解析")
-                    for ((page, img) in newItems) {
-                        updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", page, imagesForAnalysis.size, "第 $page 页：准备图片")
+                val groups = newItems.chunked(4)
+                for ((gIdx, group) in groups.withIndex()) {
+                    val gCurrent = gIdx + 1
+                    val pages = group.map { it.first }
+                    updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", gCurrent, groups.size, "准备图片（批量组 $gCurrent/${groups.size}）")
+                    val bytesList = mutableListOf<ByteArray>()
+                    for ((idx, item) in group.withIndex()) {
+                        val current = idx + 1
+                        updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", current, group.size, "压缩图片（$current/${group.size}）")
                         val bytes =
-                            img.jpegBytes
-                                ?: withContext(Dispatchers.IO) { ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath)) }
-                        val p = withExtraPrompt(slidePrompt(page), extraPrompt)
-                        updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", page, imagesForAnalysis.size, "第 $page 页：调用视觉模型")
-                        val c =
-                            llm.visionChatCompletion(
-                                baseUrl = baseUrl,
-                                apiKey = apiKey,
-                                model = visionModel,
-                                prompt = p,
-                                jpegBytes = bytes,
-                            )
-                        updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
-                        newAnalyses +=
-                            SlideAnalysisEntity(
-                                id = UUID.randomUUID().toString(),
-                                entryId = entryId,
-                                imageId = img.entity.id,
-                                extractedJson = c,
-                                extractedText = null,
-                                createdAtEpochMs = System.currentTimeMillis(),
-                            )
+                            item.second.jpegBytes
+                                ?: withContext(Dispatchers.IO) { ImageTranscodeUtil.loadAndCompressJpeg(File(item.second.entity.localPath)) }
+                        bytesList += bytes
+                    }
+                    val prompt = withExtraPrompt(slidePromptBatch(pages), extraPrompt)
+                    updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", gCurrent, groups.size, "调用视觉模型（批量组 $gCurrent/${groups.size}）")
+                    val content =
+                        llm.visionChatCompletionWithJpegBytesList(
+                            baseUrl = baseUrl,
+                            apiKey = apiKey,
+                            model = visionModel,
+                            prompt = prompt,
+                            jpegBytesList = bytesList,
+                        )
+                    val parsed = parseBatchSlideJson(json, content)
+                    val batchOk = parsed.isNotEmpty() && parsed.size == group.size
+                    if (batchOk) {
+                        for ((idx, item) in parsed.withIndex()) {
+                            val (page, img) = group.getOrNull(idx) ?: continue
+                            newAnalyses +=
+                                SlideAnalysisEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    entryId = entryId,
+                                    imageId = img.entity.id,
+                                    extractedJson = item,
+                                    extractedText = null,
+                                    createdAtEpochMs = System.currentTimeMillis() + page,
+                                )
+                        }
+                    } else {
+                        updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "批量解析失败，回退为逐页解析")
+                        for ((page, img) in group) {
+                            updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", page, imagesForAnalysis.size, "第 $page 页：准备图片")
+                            val bytes =
+                                img.jpegBytes
+                                    ?: withContext(Dispatchers.IO) { ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath)) }
+                            val p = withExtraPrompt(slidePrompt(page), extraPrompt)
+                            updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", page, imagesForAnalysis.size, "第 $page 页：调用视觉模型")
+                            val c =
+                                llm.visionChatCompletion(
+                                    baseUrl = baseUrl,
+                                    apiKey = apiKey,
+                                    model = visionModel,
+                                    prompt = p,
+                                    jpegBytes = bytes,
+                                )
+                            updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
+                            newAnalyses +=
+                                SlideAnalysisEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    entryId = entryId,
+                                    imageId = img.entity.id,
+                                    extractedJson = c,
+                                    extractedText = null,
+                                    createdAtEpochMs = System.currentTimeMillis(),
+                                )
+                        }
                     }
                 }
             } else {

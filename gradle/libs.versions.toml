@@ -46,10 +46,15 @@ google-material = { module = "com.google.android.material:material", version.ref
 markwon-core = { module = "io.noties.markwon:core", version.ref = "markwon" }
 markwon-ext-latex = { module = "io.noties.markwon:ext-latex", version.ref = "markwon" }
 markwon-ext-tables = { module = "io.noties.markwon:ext-tables", version.ref = "markwon" }
+markwon-ext-strikethrough = { module = "io.noties.markwon:ext-strikethrough", version.ref = "markwon" }
+markwon-ext-tasklist = { module = "io.noties.markwon:ext-tasklist", version.ref = "markwon" }
 markwon-image-coil = { module = "io.noties.markwon:image-coil", version.ref = "markwon" }
 markwon-inline-parser = { module = "io.noties.markwon:inline-parser", version.ref = "markwon" }
 markwon-image = { module = "io.noties.markwon:image", version.ref = "markwon" }
 commonmark = { module = "com.atlassian.commonmark:commonmark", version.ref = "commonmark" }
+commonmark-ext-gfm-strikethrough = { module = "com.atlassian.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
+commonmark-ext-gfm-tables = { module = "com.atlassian.commonmark:commonmark-ext-gfm-tables", version.ref = "commonmark" }
+commonmark-ext-autolink = { module = "com.atlassian.commonmark:commonmark-ext-autolink", version.ref = "commonmark" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

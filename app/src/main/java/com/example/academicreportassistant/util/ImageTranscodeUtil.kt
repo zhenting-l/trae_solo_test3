@@ -2,6 +2,8 @@ package com.lzt.summaryofslides.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.os.Build
 import java.io.ByteArrayOutputStream
@@ -69,5 +71,63 @@ object ImageTranscodeUtil {
             sample *= 2
         }
         return sample.coerceAtLeast(1)
+    }
+
+    fun packJpegGrid(
+        files: List<File>,
+        columns: Int = 2,
+        cellMaxSide: Int = 640,
+        quality: Int = 75,
+    ): ByteArray {
+        val valid = files.filter { it.exists() }
+        require(valid.isNotEmpty())
+        val cols = columns.coerceAtLeast(1)
+        val bitmaps = mutableListOf<Bitmap>()
+        var cellW = 0
+        var cellH = 0
+        try {
+            for (file in valid) {
+                val bmp = decodeScaledBitmap(file, cellMaxSide)
+                bitmaps += bmp
+                cellW = maxOf(cellW, bmp.width)
+                cellH = maxOf(cellH, bmp.height)
+            }
+            cellW = cellW.coerceAtLeast(1)
+            cellH = cellH.coerceAtLeast(1)
+            val rows = ((bitmaps.size + cols - 1) / cols).coerceAtLeast(1)
+            val outW = (cols * cellW).coerceAtLeast(1)
+            val outH = (rows * cellH).coerceAtLeast(1)
+            val canvasBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(canvasBitmap)
+            canvas.drawColor(Color.WHITE)
+            for ((idx, bmp) in bitmaps.withIndex()) {
+                val r = idx / cols
+                val c = idx % cols
+                val left = c * cellW + (cellW - bmp.width) / 2
+                val top = r * cellH + (cellH - bmp.height) / 2
+                canvas.drawBitmap(bmp, left.toFloat(), top.toFloat(), null)
+            }
+            val out = ByteArrayOutputStream()
+            canvasBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            canvasBitmap.recycle()
+            return out.toByteArray()
+        } finally {
+            for (bmp in bitmaps) runCatching { bmp.recycle() }
+        }
+    }
+
+    private fun decodeScaledBitmap(file: File, maxSide: Int): Bitmap {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, opts)
+        val sampleSize = calculateInSampleSize(opts.outWidth, opts.outHeight, maxSide)
+        val decodeOpts =
+            BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+        val bitmap = requireNotNull(BitmapFactory.decodeFile(file.absolutePath, decodeOpts))
+        val scaled = scaleIfNeeded(bitmap, maxSide)
+        if (scaled !== bitmap) bitmap.recycle()
+        return scaled
     }
 }

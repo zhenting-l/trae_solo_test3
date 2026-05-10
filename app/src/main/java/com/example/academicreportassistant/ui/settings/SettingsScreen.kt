@@ -45,6 +45,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var generalModel by remember { mutableStateOf("") }
     var visionModel by remember { mutableStateOf("") }
     var enableWebEnrichment by remember { mutableStateOf(false) }
+    var preferWebViewMarkdown by remember { mutableStateOf(true) }
 
     LaunchedEffect(settings.value) {
         baseUrl = settings.value.baseUrl
@@ -52,6 +53,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         generalModel = settings.value.generalModel
         visionModel = settings.value.visionModel
         enableWebEnrichment = settings.value.enableWebEnrichment
+        preferWebViewMarkdown = settings.value.preferWebViewMarkdown
     }
 
     Scaffold(
@@ -145,6 +147,18 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                     }
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("默认网页渲染总结")
+                        Switch(
+                            checked = preferWebViewMarkdown,
+                            onCheckedChange = { preferWebViewMarkdown = it },
+                        )
+                    }
+
                     Button(
                         onClick = {
                             vm.save(
@@ -153,6 +167,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 generalModel = generalModel,
                                 visionModel = visionModel,
                                 enableWebEnrichment = enableWebEnrichment,
+                                preferWebViewMarkdown = preferWebViewMarkdown,
                             )
                             onBack()
                         },

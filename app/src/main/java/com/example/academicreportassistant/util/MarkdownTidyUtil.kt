@@ -11,6 +11,7 @@ object MarkdownTidyUtil {
         md = normalizeBlockMathDelimiters(md)
         md = fixInlineMathNewlines(md)
         md = fixLatexInMathSegments(md)
+        md = removeMarkdownLineEndBackslashes(md)
         md = convertTablesToLists(md)
         md = md.replace(Regex("\n{3,}"), "\n\n").trim()
         return md + "\n"
@@ -126,6 +127,21 @@ object MarkdownTidyUtil {
             s = s.replace('，', ',').replace('。', '.').replace('：', ':').replace('；', ';')
             s = s.replace('（', '(').replace('）', ')').replace('【', '[').replace('】', ']')
             s = s.replace('−', '-')
+            s = s.replace(Regex("""\\\s*abla\b"""), "\\\\nabla")
+            s = s.replace(Regex("""\babla\b"""), "\\\\nabla")
+            s = s.replace(Regex("""\beq\s+0\b"""), "\\\\neq 0")
+            s = s.replace("\\arg\\min{", "\\arg\\min_{")
+            s = s.replace(Regex("""\\(bar|hat|tilde|vec|overline)\{([a-zA-Z])\}([a-zA-Z0-9])\b""")) { m ->
+                val cmd = m.groupValues[1]
+                val sym = m.groupValues[2]
+                val sub = m.groupValues[3]
+                "\\\\$cmd{$sym}_{$sub}"
+            }
+            s = s.replace(Regex("""([a-zA-Z])\{([0-9a-zA-Z,+\-]{1,10})\}""")) { m ->
+                val v = m.groupValues[1]
+                val sub = m.groupValues[2]
+                "${v}_{$sub}"
+            }
             s = s.replace(Regex("""\\hat\{([^}]+)\}\{([^}]+)\}""")) { m ->
                 val a = m.groupValues[1]
                 val idx = m.groupValues[2]
@@ -145,6 +161,43 @@ object MarkdownTidyUtil {
             s = fixMathbbE(s)
             s
         }.getOrDefault(raw)
+    }
+
+    private fun removeMarkdownLineEndBackslashes(md: String): String {
+        val lines = md.replace("\r\n", "\n").split('\n')
+        val out = StringBuilder(md.length)
+        var inCodeFence = false
+        var inMathBlock = false
+        for (line0 in lines) {
+            val line = line0
+            val trimmed = line.trimStart()
+            if (trimmed.startsWith("```")) {
+                inCodeFence = !inCodeFence
+                out.append(line).append('\n')
+                continue
+            }
+            if (!inCodeFence) {
+                val t = line.trim()
+                if (t.startsWith("$$")) {
+                    inMathBlock = !inMathBlock
+                    out.append(line).append('\n')
+                    continue
+                }
+            }
+            if (!inCodeFence && !inMathBlock) {
+                val t = line.trim()
+                if (t == "\\") {
+                    out.append('\n')
+                    continue
+                }
+                if (line.endsWith("\\") && !line.endsWith("\\\\")) {
+                    out.append(line.dropLast(1)).append('\n')
+                    continue
+                }
+            }
+            out.append(line).append('\n')
+        }
+        return out.toString().trimEnd()
     }
 
     private fun fixMathbbE(latex: String): String {
