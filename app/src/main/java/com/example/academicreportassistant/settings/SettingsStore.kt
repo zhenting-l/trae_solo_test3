@@ -3,6 +3,7 @@ package com.lzt.summaryofslides.settings
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +17,7 @@ data class ModelSettings(
     val apiKey: String,
     val generalModel: String,
     val visionModel: String,
+    val enableWebEnrichment: Boolean,
 )
 
 class SettingsStore(private val context: Context) {
@@ -25,6 +27,7 @@ class SettingsStore(private val context: Context) {
         val apiKey = stringPreferencesKey("api_key")
         val generalModel = stringPreferencesKey("general_model")
         val visionModel = stringPreferencesKey("vision_model")
+        val enableWebEnrichment = booleanPreferencesKey("enable_web_enrichment")
     }
 
     val modelSettings: Flow<ModelSettings> = context.dataStore.data.map { prefs ->
@@ -37,6 +40,7 @@ class SettingsStore(private val context: Context) {
             apiKey = prefs[Keys.apiKey] ?: "",
             generalModel = prefs[Keys.generalModel] ?: preset.defaultGeneralModel,
             visionModel = prefs[Keys.visionModel] ?: preset.defaultVisionModel,
+            enableWebEnrichment = prefs[Keys.enableWebEnrichment] ?: false,
         )
     }
 
@@ -54,12 +58,14 @@ class SettingsStore(private val context: Context) {
         apiKey: String? = null,
         generalModel: String? = null,
         visionModel: String? = null,
+        enableWebEnrichment: Boolean? = null,
     ) {
         context.dataStore.edit { prefs ->
             if (baseUrl != null) prefs[Keys.baseUrl] = baseUrl
             if (apiKey != null) prefs[Keys.apiKey] = apiKey
             if (generalModel != null) prefs[Keys.generalModel] = generalModel
             if (visionModel != null) prefs[Keys.visionModel] = visionModel
+            if (enableWebEnrichment != null) prefs[Keys.enableWebEnrichment] = enableWebEnrichment
         }
     }
 }

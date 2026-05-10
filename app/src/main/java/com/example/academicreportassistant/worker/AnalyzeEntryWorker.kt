@@ -12,6 +12,7 @@ import com.lzt.summaryofslides.data.db.EntryImageEntity
 import com.lzt.summaryofslides.data.db.EntryPdfEntity
 import com.lzt.summaryofslides.data.db.SlideAnalysisEntity
 import com.lzt.summaryofslides.llm.OpenAiCompatClient
+import com.lzt.summaryofslides.llm.AcademicMetadataEnricher
 import com.lzt.summaryofslides.llm.ZhiPuDocParser
 import com.lzt.summaryofslides.util.ImageTranscodeUtil
 import com.lzt.summaryofslides.util.MarkdownHtmlUtil
@@ -130,15 +131,40 @@ class AnalyzeEntryWorker(
                     runCatching {
                         updateProgress(repo, entryId, "PROCESSING", "PARSE_PDF", null, null, "解析PDF为Markdown")
                         val pdfMd = parsePdfFilesToMarkdown(baseUrl, apiKey, pdfFiles)
-                        updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（基于PDF文本）")
-                        val finalRaw =
-                            llm.textChatCompletion(
+                        val external =
+                            if (settings.enableWebEnrichment) {
+                                updateProgress(repo, entryId, "PROCESSING", "ENRICH_WEB", null, null, "联网补充论文信息")
+                                runCatching {
+                                    AcademicMetadataEnricher().enrichFromPdfMarkdown(pdfMd)
+                                }.getOrNull()
+                            } else {
+                                null
+                            }
+                        val externalBlock = external?.toPromptBlock()
+                        if (shouldChunkPdfMarkdown(pdfMd)) {
+                            analyzePdfMarkdownChunked(
+                                repo = repo,
+                                llm = llm,
+                                json = json,
+                                entryId = entryId,
                                 baseUrl = baseUrl,
                                 apiKey = apiKey,
-                                model = settings.generalModel,
-                                prompt = withExtraPrompt(pdfMarkdownPrompt(pdfMd), extraPrompt),
+                                generalModel = settings.generalModel,
+                                pdfMd = pdfMd,
+                                extraPrompt = extraPrompt,
+                                externalMetadata = externalBlock,
                             )
-                        parseSummaryPayload(json, finalRaw)
+                        } else {
+                            updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（基于PDF文本）")
+                            val finalRaw =
+                                llm.textChatCompletion(
+                                    baseUrl = baseUrl,
+                                    apiKey = apiKey,
+                                    model = settings.generalModel,
+                                    prompt = withExternalMetadata(withExtraPrompt(pdfMarkdownPrompt(pdfMd), extraPrompt), externalBlock),
+                                )
+                            parseSummaryPayload(json, finalRaw)
+                        }
                     }.getOrElse { e ->
                         if (settings.visionModel.isBlank()) {
                             repo.updateEntryProgress(
@@ -489,7 +515,7 @@ class AnalyzeEntryWorker(
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用${'$'}...${'$'}，块级用${'$'}${'$'}...${'$'}${'$'}），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：块级公式用${'$'}${'$'}在独立行包裹（即${'$'}${'$'}\\n...\\n${'$'}${'$'}），行内公式用${'$'}...${'$'}且必须同一行闭合（不要在${'$'}...${'$'}中换行）。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要写成\\hat{A}{i,t}、D{\\text{KL}}、\\{o_i\\}{i=1}^G、\\pi{\\theta}等不规范形式。数学环境内标点用半角(, . ; :)。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
 }
 
 上一次总结（如有）：
@@ -515,7 +541,7 @@ ${pdfMd.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：块级公式用${'$'}${'$'}在独立行包裹（即${'$'}${'$'}\\n...\\n${'$'}${'$'}），行内公式用${'$'}...${'$'}且必须同一行闭合（不要在${'$'}...${'$'}中换行）。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要写成\\hat{A}{i,t}、D{\\text{KL}}、\\{o_i\\}{i=1}^G、\\pi{\\theta}等不规范形式。数学环境内标点用半角(, . ; :)。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
 }
 
 上一次总结：
@@ -529,6 +555,122 @@ ${allSlides.take(120_000)}
     private fun withExtraPrompt(prompt: String, extraPrompt: String?): String {
         if (extraPrompt.isNullOrBlank()) return prompt
         return prompt + "\n\n用户附加提示词：\n" + extraPrompt.take(4_000)
+    }
+
+    private fun withExternalMetadata(prompt: String, metadata: String?): String {
+        if (metadata.isNullOrBlank()) return prompt
+        return prompt + "\n\n外部元数据（仅用于补全报告信息与关键词；如与文档内容冲突，以文档为准；不确定则留空）：\n" + metadata.take(12_000)
+    }
+
+    private fun shouldChunkPdfMarkdown(pdfMd: String): Boolean {
+        val len = pdfMd.length
+        if (len >= 35_000) return true
+        val lower = pdfMd.lowercase()
+        val hasPaperSignals =
+            lower.contains("abstract") ||
+                lower.contains("introduction") ||
+                lower.contains("related work") ||
+                lower.contains("references") ||
+                lower.contains("bibliography")
+        return hasPaperSignals && len >= 18_000
+    }
+
+    private suspend fun analyzePdfMarkdownChunked(
+        repo: com.lzt.summaryofslides.data.repo.EntryRepository,
+        llm: OpenAiCompatClient,
+        json: Json,
+        entryId: String,
+        baseUrl: String,
+        apiKey: String,
+        generalModel: String,
+        pdfMd: String,
+        extraPrompt: String?,
+        externalMetadata: String?,
+    ): SummaryPayload {
+        updateProgress(repo, entryId, "PROCESSING", "CHUNK_PDF", null, null, "论文分块处理")
+        val chunks = chunkMarkdown(pdfMd, 12_000)
+        val chunkJsons = mutableListOf<String>()
+        for ((idx, chunk) in chunks.withIndex()) {
+            val current = idx + 1
+            updateProgress(repo, entryId, "PROCESSING", "CHUNK_PDF", current, chunks.size, "分块分析（$current/${chunks.size}）")
+            val raw =
+                llm.textChatCompletion(
+                    baseUrl = baseUrl,
+                    apiKey = apiKey,
+                    model = generalModel,
+                    prompt = withExtraPrompt(pdfChunkPrompt(current, chunks.size, chunk), extraPrompt),
+                )
+            val block = extractJsonBlock(raw) ?: raw
+            chunkJsons += block.trim()
+        }
+
+        updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "融合分块结果生成总结")
+        val finalRaw =
+            llm.textChatCompletion(
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                model = generalModel,
+                prompt = withExternalMetadata(withExtraPrompt(pdfChunkMergePrompt(chunkJsons), extraPrompt), externalMetadata),
+            )
+        return parseSummaryPayload(json, finalRaw)
+    }
+
+    private fun chunkMarkdown(md: String, maxChars: Int): List<String> {
+        val text = md.replace("\r\n", "\n").trim()
+        if (text.length <= maxChars) return listOf(text)
+        val lines = text.split('\n')
+        val chunks = mutableListOf<StringBuilder>()
+        var cur = StringBuilder()
+        fun push() {
+            if (cur.isNotBlank()) chunks += cur
+            cur = StringBuilder()
+        }
+        for (line in lines) {
+            if (cur.length + line.length + 1 > maxChars && cur.isNotBlank()) push()
+            cur.append(line).append('\n')
+        }
+        push()
+        return chunks.map { it.toString().trim() }.filter { it.isNotBlank() }
+    }
+
+    private fun pdfChunkPrompt(index: Int, total: Int, md: String): String {
+        return """
+你是论文解析助手。下面给出一篇论文的第 $index/$total 个分块（由PDF版式解析器抽取的Markdown）。请只基于该分块内容进行结构化提取，输出严格JSON（不要包含除JSON以外的任何文本）：
+{
+  "chunk_index": $index,
+  "chunk_title": "该分块所属章节/主题（尽量短，无法判断则空字符串）",
+  "key_points": ["要点1","要点2"],
+  "methods": ["方法/模型/算法（可空）"],
+  "equations": ["关键公式/符号解释（可空）。将上下标写清楚，使用^和_并配合花括号：x_{k}, x^{k}"],
+  "claims": ["定理/结论/贡献点（可空）"],
+  "experiments": ["实验设置/数据集/指标/结果（可空）"],
+  "citations": ["引用/参考文献线索（可空）"],
+  "terms": ["术语及简短解释（可空）"]
+}
+
+分块Markdown如下：
+${md.take(15_000)}
+""".trimIndent()
+    }
+
+    private fun pdfChunkMergePrompt(chunkJsons: List<String>): String {
+        val joined = chunkJsons.joinToString(",\n")
+        return """
+你将收到同一篇论文的多个分块解析结果（JSON数组元素）。请综合所有分块信息，生成最终论文总结，并输出严格JSON（不要包含除JSON以外的任何文本），结构如下：
+{
+  "short_title": "为该条目生成一个最适合展示在列表页的短标题（1-3行，可中英文混用，尽量信息密度高）",
+  "speaker_name": "",
+  "speaker_affiliation": "",
+  "talk_title": "",
+  "keywords": ["关键词1","关键词2"],
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
+}
+
+分块解析结果如下（按chunk_index排序但可能不连续）：
+[
+$joined
+]
+""".trimIndent()
     }
 
     private fun slidePromptBatch(pages: List<Int>): String {
@@ -705,7 +847,7 @@ ${allSlides.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：块级公式用${'$'}${'$'}在独立行包裹（即${'$'}${'$'}\\n...\\n${'$'}${'$'}），行内公式用${'$'}...${'$'}且必须同一行闭合（不要在${'$'}...${'$'}中换行）。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要写成\\hat{A}{i,t}、D{\\text{KL}}、\\{o_i\\}{i=1}^G、\\pi{\\theta}等不规范形式。数学环境内标点用半角(, . ; :)。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：
@@ -722,7 +864,7 @@ ${allSlides.take(120_000)}
   "speaker_affiliation": "单位/机构(若无法确定则空字符串)",
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：块级公式用${'$'}${'$'}在独立行包裹（即${'$'}${'$'}\\n...\\n${'$'}${'$'}），行内公式用${'$'}...${'$'}且必须同一行闭合（不要在${'$'}...${'$'}中换行）。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要写成\\hat{A}{i,t}、D{\\text{KL}}、\\{o_i\\}{i=1}^G、\\pi{\\theta}等不规范形式。数学环境内标点用半角(, . ; :)。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
 }
 """.trimIndent()
     }
@@ -737,7 +879,7 @@ ${allSlides.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用${'$'}...${'$'}且必须在同一行闭合（不要在${'$'}...${'$'}中换行），跨行/长公式用${'$'}${'$'}...${'$'}${'$'}。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：块级公式用${'$'}${'$'}在独立行包裹（即${'$'}${'$'}\\n...\\n${'$'}${'$'}），行内公式用${'$'}...${'$'}且必须同一行闭合（不要在${'$'}...${'$'}中换行）。涉及上下标时使用^和_并配合大括号：x_{k}, x^{k}, x^{*}。不要写成\\hat{A}{i,t}、D{\\text{KL}}、\\{o_i\\}{i=1}^G、\\pi{\\theta}等不规范形式。数学环境内标点用半角(, . ; :)。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：

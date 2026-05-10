@@ -17,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -42,12 +43,14 @@ fun SettingsScreen(onBack: () -> Unit) {
     var apiKey by remember { mutableStateOf("") }
     var generalModel by remember { mutableStateOf("") }
     var visionModel by remember { mutableStateOf("") }
+    var enableWebEnrichment by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings.value) {
         baseUrl = settings.value.baseUrl
         apiKey = settings.value.apiKey
         generalModel = settings.value.generalModel
         visionModel = settings.value.visionModel
+        enableWebEnrichment = settings.value.enableWebEnrichment
     }
 
     Scaffold(
@@ -129,9 +132,27 @@ fun SettingsScreen(onBack: () -> Unit) {
                         singleLine = true,
                     )
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("联网补充论文信息")
+                        Switch(
+                            checked = enableWebEnrichment,
+                            onCheckedChange = { enableWebEnrichment = it },
+                        )
+                    }
+
                     Button(
                         onClick = {
-                            vm.save(baseUrl, apiKey, generalModel, visionModel)
+                            vm.save(
+                                baseUrl = baseUrl,
+                                apiKey = apiKey,
+                                generalModel = generalModel,
+                                visionModel = visionModel,
+                                enableWebEnrichment = enableWebEnrichment,
+                            )
                             onBack()
                         },
                         modifier = Modifier.fillMaxWidth(),

@@ -23,6 +23,7 @@ class SettingsViewModel : ViewModel() {
                 apiKey = "",
                 generalModel = ModelProviderPreset.ZhiPu.defaultGeneralModel,
                 visionModel = ModelProviderPreset.ZhiPu.defaultVisionModel,
+                enableWebEnrichment = false,
             ),
         )
 
@@ -35,6 +36,7 @@ class SettingsViewModel : ViewModel() {
         apiKey: String,
         generalModel: String,
         visionModel: String,
+        enableWebEnrichment: Boolean,
     ) {
         viewModelScope.launch {
             store.update(
@@ -42,6 +44,7 @@ class SettingsViewModel : ViewModel() {
                 apiKey = apiKey,
                 generalModel = generalModel,
                 visionModel = visionModel,
+                enableWebEnrichment = enableWebEnrichment,
             )
         }
     }
