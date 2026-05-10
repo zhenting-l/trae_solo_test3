@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -39,6 +41,7 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon
+          echo "APP_VERSION_NAME=$(grep -E '^APP_VERSION_NAME=' gradle.properties | cut -d= -f2)" >> $GITHUB_ENV
 
       - name: Upload APK (release)
         if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
@@ -46,6 +49,18 @@ jobs:
         with:
           name: app-release-apk
           path: app/build/outputs/apk/release/app-release.apk
+
+      - name: Publish GitHub Release (release APK)
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION_NAME }}
+          name: v${{ env.APP_VERSION_NAME }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: app/build/outputs/apk/release/app-release.apk
 
       - name: Build Debug APK (fallback)
         if: ${{ env.ANDROID_KEYSTORE_BASE64 == '' }}
