@@ -423,17 +423,48 @@ class AnalyzeEntryWorker(
                         jpegBytesList = bytesList,
                     )
                 val parsed = parseBatchSlideJson(json, content)
-                for ((idx, item) in parsed.withIndex()) {
-                    val (page, img) = newItems.getOrNull(idx) ?: continue
-                    newAnalyses +=
-                        SlideAnalysisEntity(
-                            id = UUID.randomUUID().toString(),
-                            entryId = entryId,
-                            imageId = img.entity.id,
-                            extractedJson = item,
-                            extractedText = null,
-                            createdAtEpochMs = System.currentTimeMillis() + page,
-                        )
+                val batchOk = parsed.isNotEmpty() && parsed.size == newItems.size
+                if (batchOk) {
+                    for ((idx, item) in parsed.withIndex()) {
+                        val (page, img) = newItems.getOrNull(idx) ?: continue
+                        newAnalyses +=
+                            SlideAnalysisEntity(
+                                id = UUID.randomUUID().toString(),
+                                entryId = entryId,
+                                imageId = img.entity.id,
+                                extractedJson = item,
+                                extractedText = null,
+                                createdAtEpochMs = System.currentTimeMillis() + page,
+                            )
+                    }
+                } else {
+                    updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "批量解析失败，回退为逐页解析")
+                    for ((page, img) in newItems) {
+                        updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", page, imagesForAnalysis.size, "第 $page 页：准备图片")
+                        val bytes =
+                            img.jpegBytes
+                                ?: withContext(Dispatchers.IO) { ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath)) }
+                        val p = withExtraPrompt(slidePrompt(page), extraPrompt)
+                        updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", page, imagesForAnalysis.size, "第 $page 页：调用视觉模型")
+                        val c =
+                            llm.visionChatCompletion(
+                                baseUrl = baseUrl,
+                                apiKey = apiKey,
+                                model = visionModel,
+                                prompt = p,
+                                jpegBytes = bytes,
+                            )
+                        updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
+                        newAnalyses +=
+                            SlideAnalysisEntity(
+                                id = UUID.randomUUID().toString(),
+                                entryId = entryId,
+                                imageId = img.entity.id,
+                                extractedJson = c,
+                                extractedText = null,
+                                createdAtEpochMs = System.currentTimeMillis(),
+                            )
+                    }
                 }
             } else {
                 for ((page, img) in newItems) {
@@ -688,14 +719,32 @@ $joined
   "terms": ["术语及简短解释(可空)"],
   "raw_text": "尽可能完整的可读文本(可空)"
 }
+
+要求：
+1) JSON数组长度必须等于图片数量（${pages.size}）
+2) 每个元素的 page_index 必须与对应图片页码一致（按顺序分别为：$p）
 """.trimIndent()
     }
 
     private fun parseBatchSlideJson(json: Json, raw: String): List<String> {
-        val block = extractJsonBlock(raw) ?: raw
+        val block = extractJsonArrayBlock(raw) ?: raw
         val el = runCatching { json.parseToJsonElement(block) }.getOrNull() ?: return emptyList()
-        val arr = el as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        val arr =
+            (el as? kotlinx.serialization.json.JsonArray)
+                ?: (el.jsonObjectOrNull()
+                    ?.values
+                    ?.firstOrNull { it is kotlinx.serialization.json.JsonArray } as? kotlinx.serialization.json.JsonArray)
+                ?: return emptyList()
         return arr.map { it.toString() }
+    }
+
+    private fun extractJsonArrayBlock(text: String): String? {
+        val fenced = Regex("```json\\s*([\\s\\S]*?)\\s*```").find(text)?.groupValues?.getOrNull(1)?.trim()
+        if (!fenced.isNullOrBlank() && fenced.startsWith("[")) return fenced
+        val start = text.indexOf('[')
+        val end = text.lastIndexOf(']')
+        if (start >= 0 && end > start) return text.substring(start, end + 1).trim()
+        return null
     }
 
     private fun extractBriefFromSlideAnalysisJson(json: Json, raw: String): String? {
