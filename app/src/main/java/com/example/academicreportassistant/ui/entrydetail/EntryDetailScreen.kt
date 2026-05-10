@@ -2,6 +2,8 @@ package com.lzt.summaryofslides.ui.entrydetail
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +25,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +91,8 @@ fun EntryDetailScreen(
     var batchImages by remember { mutableStateOf(false) }
     var incrementalSummary by remember { mutableStateOf(false) }
 
+    val takePictureLauncherRef =
+        remember { mutableStateOf<ManagedActivityResultLauncher<Uri, Boolean>?>(null) }
     val takePictureLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
             val file = pendingCameraFile
@@ -95,7 +101,7 @@ fun EntryDetailScreen(
                     if (continuousCapture) {
                         val next = createTempCameraFile(context)
                         pendingCameraFile = next
-                        takePictureLauncher.launch(fileToContentUri(context, next))
+                        takePictureLauncherRef.value?.launch(fileToContentUri(context, next))
                     }
                 }
             } else {
@@ -104,6 +110,9 @@ fun EntryDetailScreen(
             }
             pendingCameraFile = null
         }
+    SideEffect {
+        takePictureLauncherRef.value = takePictureLauncher
+    }
 
     val pickImagesLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
