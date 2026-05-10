@@ -55,6 +55,7 @@ commonmark = { module = "com.atlassian.commonmark:commonmark", version.ref = "co
 commonmark-ext-gfm-strikethrough = { module = "com.atlassian.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
 commonmark-ext-gfm-tables = { module = "com.atlassian.commonmark:commonmark-ext-gfm-tables", version.ref = "commonmark" }
 commonmark-ext-autolink = { module = "com.atlassian.commonmark:commonmark-ext-autolink", version.ref = "commonmark" }
+pdfium-android = { module = "com.github.barteksc:pdfium-android", version = "1.9.0" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

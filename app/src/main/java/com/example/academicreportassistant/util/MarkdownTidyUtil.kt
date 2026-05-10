@@ -3,6 +3,8 @@ package com.lzt.summaryofslides.util
 object MarkdownTidyUtil {
     fun tidy(raw: String): String {
         var md = raw.replace("\r\n", "\n").trim()
+        md = stripMathCodeFences(md)
+        md = ensureDoubleDollarStandalone(md)
         md = md.replace("\\\\(", "\$")
             .replace("\\\\)", "\$")
             .replace("\\\\[", "\$\$")
@@ -15,6 +17,33 @@ object MarkdownTidyUtil {
         md = convertTablesToLists(md)
         md = md.replace(Regex("\n{3,}"), "\n\n").trim()
         return md + "\n"
+    }
+
+    private fun stripMathCodeFences(md: String): String {
+        return md.replace(Regex("```(?:latex|math)\\s*([\\s\\S]*?)\\s*```", RegexOption.IGNORE_CASE)) { m ->
+            m.groupValues.getOrNull(1).orEmpty().trim()
+        }
+    }
+
+    private fun ensureDoubleDollarStandalone(md: String): String {
+        val lines = md.replace("\r\n", "\n").split('\n')
+        val out = StringBuilder(md.length + 32)
+        var inCodeFence = false
+        for (line0 in lines) {
+            val line = line0
+            val trimmed = line.trimStart()
+            if (trimmed.startsWith("```")) {
+                inCodeFence = !inCodeFence
+                out.append(line).append('\n')
+                continue
+            }
+            if (!inCodeFence && line.contains("$$") && line.trim() != "$$") {
+                out.append(line.replace("$$", "\n$$\n")).append('\n')
+                continue
+            }
+            out.append(line).append('\n')
+        }
+        return out.toString().trimEnd()
     }
 
     private fun normalizeBlockMathDelimiters(md: String): String {
@@ -159,6 +188,11 @@ object MarkdownTidyUtil {
                 "\\\\}_{" + m.groupValues[1] + "}"
             }
             s = fixMathbbE(s)
+            val leftCount = Regex("""\\left\b""").findAll(s).count()
+            val rightCount = Regex("""\\right\b""").findAll(s).count()
+            if (leftCount != rightCount) {
+                s = s.replace("\\left", "").replace("\\right", "")
+            }
             s
         }.getOrDefault(raw)
     }

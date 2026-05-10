@@ -37,6 +37,9 @@ class OpenAiCompatClient(
         model: String,
         prompt: String,
         jpegBytes: ByteArray,
+        temperature: Double = 0.2,
+        topP: Double? = null,
+        maxTokens: Int? = null,
     ): String {
         val b64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
         val dataUrl = "data:image/jpeg;base64,$b64"
@@ -46,6 +49,9 @@ class OpenAiCompatClient(
             model = model,
             prompt = prompt,
             dataUrls = listOf(dataUrl),
+            temperature = temperature,
+            topP = topP,
+            maxTokens = maxTokens,
         )
     }
 
@@ -55,6 +61,9 @@ class OpenAiCompatClient(
         model: String,
         prompt: String,
         jpegBytesList: List<ByteArray>,
+        temperature: Double = 0.2,
+        topP: Double? = null,
+        maxTokens: Int? = null,
     ): String {
         val urls =
             jpegBytesList.map { bytes ->
@@ -67,6 +76,9 @@ class OpenAiCompatClient(
             model = model,
             prompt = prompt,
             dataUrls = urls,
+            temperature = temperature,
+            topP = topP,
+            maxTokens = maxTokens,
         )
     }
 
@@ -76,6 +88,9 @@ class OpenAiCompatClient(
         model: String,
         prompt: String,
         pdfFiles: List<File>,
+        temperature: Double = 0.2,
+        topP: Double? = null,
+        maxTokens: Int? = null,
     ): String {
         val maxBytes = 15L * 1024L * 1024L
         val urls =
@@ -91,6 +106,9 @@ class OpenAiCompatClient(
             model = model,
             prompt = prompt,
             dataUrls = urls,
+            temperature = temperature,
+            topP = topP,
+            maxTokens = maxTokens,
         )
     }
 
@@ -100,6 +118,9 @@ class OpenAiCompatClient(
         model: String,
         prompt: String,
         dataUrls: List<String>,
+        temperature: Double,
+        topP: Double?,
+        maxTokens: Int?,
     ): String {
         val body = buildChatCompletionBody(
             model = model,
@@ -132,6 +153,9 @@ class OpenAiCompatClient(
                     },
                 )
             },
+            temperature = temperature,
+            topP = topP,
+            maxTokens = maxTokens,
         )
         return postForAssistantText(baseUrl, apiKey, body)
     }
@@ -141,6 +165,9 @@ class OpenAiCompatClient(
         apiKey: String,
         model: String,
         prompt: String,
+        temperature: Double = 0.2,
+        topP: Double? = null,
+        maxTokens: Int? = null,
     ): String {
         val body = buildChatCompletionBody(
             model = model,
@@ -152,6 +179,9 @@ class OpenAiCompatClient(
                     },
                 )
             },
+            temperature = temperature,
+            topP = topP,
+            maxTokens = maxTokens,
         )
         return postForAssistantText(baseUrl, apiKey, body)
     }
@@ -168,11 +198,19 @@ class OpenAiCompatClient(
         }
     }
 
-    private fun buildChatCompletionBody(model: String, messages: JsonArray): JsonObject {
+    private fun buildChatCompletionBody(
+        model: String,
+        messages: JsonArray,
+        temperature: Double,
+        topP: Double?,
+        maxTokens: Int?,
+    ): JsonObject {
         return buildJsonObject {
             put("model", JsonPrimitive(model))
             put("messages", messages)
-            put("temperature", JsonPrimitive(0.2))
+            put("temperature", JsonPrimitive(temperature))
+            if (topP != null) put("top_p", JsonPrimitive(topP))
+            if (maxTokens != null) put("max_tokens", JsonPrimitive(maxTokens))
         }
     }
 

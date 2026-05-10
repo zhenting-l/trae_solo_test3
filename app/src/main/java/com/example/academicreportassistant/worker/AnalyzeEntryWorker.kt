@@ -2,9 +2,14 @@ package com.lzt.summaryofslides.worker
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import com.shockwave.pdfium.PdfDocument
+import com.shockwave.pdfium.PdfiumCore
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.lzt.summaryofslides.data.AppContainer
@@ -429,6 +434,9 @@ class AnalyzeEntryWorker(
                             model = visionModel,
                             prompt = prompt,
                             jpegBytesList = bytesList,
+                            temperature = 0.1,
+                            topP = 0.7,
+                            maxTokens = 4096,
                         )
                     val parsed = parseBatchSlideJson(json, content)
                     val batchOk = parsed.isNotEmpty() && parsed.size == group.size
@@ -461,6 +469,9 @@ class AnalyzeEntryWorker(
                                     model = visionModel,
                                     prompt = p,
                                     jpegBytes = bytes,
+                                    temperature = 0.1,
+                                    topP = 0.7,
+                                    maxTokens = 4096,
                                 )
                             updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
                             newAnalyses +=
@@ -490,6 +501,9 @@ class AnalyzeEntryWorker(
                             model = visionModel,
                             prompt = prompt,
                             jpegBytes = bytes,
+                            temperature = 0.1,
+                            topP = 0.7,
+                            maxTokens = 4096,
                         )
                     updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
                     newAnalyses +=
@@ -722,7 +736,7 @@ $joined
   "section": "本页所属章节/主题(可空)",
   "main_points": ["要点1","要点2"],
   "methods": ["方法/模型/算法(可空)"],
-  "equations": ["公式/符号解释(可空)。将识别内容转为LaTeX时注意上下标位置，使用^和_并配合花括号：x_{k}, x^{k}"],
+  "equations": ["公式/符号解释(可空)。必须输出可编译的LaTeX（不要加$或$$）。上下标必须用^/_并配合花括号：x_{k}, x^{k}, x^{*}。算子必须带反斜杠：\\sin, \\log, \\max, \\arg\\min, \\det。偏导用\\partial，梯度用\\nabla，分数用\\frac。多行对齐公式用\\begin{aligned}...\\end{aligned}并用\\\\换行、&对齐。"],
   "figures": ["图表/示意图描述(可空)"],
   "citations": ["出现的论文/作者/会议期刊/DOI/链接线索(可空)"],
   "terms": ["术语及简短解释(可空)"],
@@ -783,7 +797,55 @@ $joined
         val outFiles = mutableListOf<File>()
         val maxTotalPages = 60
         val totalPages = pdfFiles.sumOf { file -> countPdfPages(file) }.coerceAtLeast(1).coerceAtMost(maxTotalPages)
+        val paperLike = isLikelyPaperPdf(pdfFiles, totalPages)
         var renderedCount = 0
+
+        if (paperLike) {
+            runCatching {
+                val pdfium = PdfiumCore(AppContainer.appContext)
+                outer@ for ((pdfIdx, pdfFile) in pdfFiles.withIndex()) {
+                    if (!pdfFile.exists()) continue
+                    val fd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                    val doc: PdfDocument
+                    try {
+                        doc = pdfium.newDocument(fd)
+                    } catch (e: Exception) {
+                        fd.close()
+                        continue
+                    }
+                    try {
+                        val pageCount = pdfium.getPageCount(doc)
+                        for (i in 0 until pageCount) {
+                            if (renderedCount >= maxTotalPages) break@outer
+                            renderedCount += 1
+                            updateProgress(repo, entryId, "PROCESSING", "RENDER_PDF", renderedCount, totalPages, "渲染PDF（PDFium，$renderedCount/$totalPages）")
+                            pdfium.openPage(doc, i)
+                            val w = pdfium.getPageWidthPoint(doc, i)
+                            val h = pdfium.getPageHeightPoint(doc, i)
+                            val bitmap =
+                                renderPdfPageBitmap(w, h) { bitmap, bmpW, bmpH ->
+                                    pdfium.renderPageBitmap(doc, bitmap, i, 0, 0, bmpW, bmpH)
+                                }
+                            val pageIndex = i + 1
+                            val parts = splitIfPaper(bitmap)
+                            bitmap.recycle()
+                            for (part in parts) {
+                                val outFile = File(pagesDir, "pdf${pdfIdx + 1}_page_$pageIndex${part.suffix}.jpg")
+                                writeJpegWhiteBackground(outFile, part.bitmap, 92)
+                                outFiles += outFile
+                                part.bitmap.recycle()
+                            }
+                        }
+                    } finally {
+                        runCatching { pdfium.closeDocument(doc) }
+                        runCatching { fd.close() }
+                    }
+                }
+            }.onSuccess {
+                if (outFiles.isNotEmpty()) return outFiles
+            }
+        }
+
         outer@ for ((pdfIdx, pdfFile) in pdfFiles.withIndex()) {
             if (!pdfFile.exists()) continue
             val fd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -797,24 +859,40 @@ $joined
                         updateProgress(repo, entryId, "PROCESSING", "RENDER_PDF", renderedCount, totalPages, "渲染PDF（$renderedCount/$totalPages）")
                         val pageIndex = i + 1
                         val page = renderer.openPage(i)
-                        val maxSide = 1280f
-                        val scale =
-                            (maxSide / maxOf(page.width, page.height).toFloat()).coerceAtMost(1f).coerceAtLeast(0.1f)
-                        val bmpW = (page.width * scale).toInt().coerceAtLeast(1)
-                        val bmpH = (page.height * scale).toInt().coerceAtLeast(1)
+                        val targetMaxSide = 2200f
+                        var scale = (targetMaxSide / maxOf(page.width, page.height).toFloat()).coerceAtLeast(1f).coerceAtMost(3f)
+                        var bmpW = (page.width * scale).toInt().coerceAtLeast(1)
+                        var bmpH = (page.height * scale).toInt().coerceAtLeast(1)
+                        val maxPixels = 10_000_000L
+                        val pixels = bmpW.toLong() * bmpH.toLong()
+                        if (pixels > maxPixels) {
+                            val factor = kotlin.math.sqrt(maxPixels.toDouble() / pixels.toDouble()).toFloat().coerceAtMost(1f)
+                            scale *= factor
+                            bmpW = (page.width * scale).toInt().coerceAtLeast(1)
+                            bmpH = (page.height * scale).toInt().coerceAtLeast(1)
+                        }
+
                         val bitmap = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+                        bitmap.eraseColor(Color.WHITE)
                         val matrix = Matrix().apply { setScale(scale, scale) }
                         page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                         page.close()
 
-                        val baos = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos)
-                        bitmap.recycle()
-                        val bytes = baos.toByteArray()
-
-                        val outFile = File(pagesDir, "pdf${pdfIdx + 1}_page_$pageIndex.jpg")
-                        outFile.outputStream().use { it.write(bytes) }
-                        outFiles += outFile
+                        val parts = if (paperLike) splitIfPaper(bitmap) else listOf(PdfPageSlice("", bitmap))
+                        if (!paperLike) {
+                            val outFile = File(pagesDir, "pdf${pdfIdx + 1}_page_$pageIndex.jpg")
+                            writeJpegWhiteBackground(outFile, bitmap, 92)
+                            outFiles += outFile
+                            bitmap.recycle()
+                        } else {
+                            bitmap.recycle()
+                            for (part in parts) {
+                                val outFile = File(pagesDir, "pdf${pdfIdx + 1}_page_$pageIndex${part.suffix}.jpg")
+                                writeJpegWhiteBackground(outFile, part.bitmap, 92)
+                                outFiles += outFile
+                                part.bitmap.recycle()
+                            }
+                        }
                     }
                 } finally {
                     renderer.close()
@@ -824,6 +902,215 @@ $joined
             }
         }
         return outFiles
+    }
+
+    private fun isLikelyPaperPdf(pdfFiles: List<File>, totalPages: Int): Boolean {
+        if (totalPages < 8) return false
+        val first = pdfFiles.firstOrNull { it.exists() } ?: return false
+        return runCatching {
+            val fd = ParcelFileDescriptor.open(first, ParcelFileDescriptor.MODE_READ_ONLY)
+            fd.use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    if (renderer.pageCount <= 0) return@use false
+                    renderer.openPage(0).use { page ->
+                        val w = page.width.toFloat().coerceAtLeast(1f)
+                        val h = page.height.toFloat().coerceAtLeast(1f)
+                        val portrait = h >= w
+                        val ratio = w / h
+                        portrait && ratio <= 0.82f
+                    }
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun renderPdfPageBitmap(
+        pageW: Int,
+        pageH: Int,
+        render: (bitmap: Bitmap, bmpW: Int, bmpH: Int) -> Unit,
+    ): Bitmap {
+        val targetMaxSide = 2600f
+        var scale = (targetMaxSide / maxOf(pageW, pageH).toFloat()).coerceAtLeast(1f).coerceAtMost(3f)
+        var bmpW = (pageW * scale).toInt().coerceAtLeast(1)
+        var bmpH = (pageH * scale).toInt().coerceAtLeast(1)
+        val maxPixels = 10_000_000L
+        val pixels = bmpW.toLong() * bmpH.toLong()
+        if (pixels > maxPixels) {
+            val factor = kotlin.math.sqrt(maxPixels.toDouble() / pixels.toDouble()).toFloat().coerceAtMost(1f)
+            scale *= factor
+            bmpW = (pageW * scale).toInt().coerceAtLeast(1)
+            bmpH = (pageH * scale).toInt().coerceAtLeast(1)
+        }
+        val bitmap = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.WHITE)
+        render(bitmap, bmpW, bmpH)
+        val flattened = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(flattened)
+        canvas.drawColor(Color.WHITE)
+        canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        bitmap.recycle()
+        return flattened
+    }
+
+    private data class PdfPageSlice(
+        val suffix: String,
+        val bitmap: Bitmap,
+    )
+
+    private fun splitIfPaper(bitmap: Bitmap): List<PdfPageSlice> {
+        if (bitmap.width >= bitmap.height) return listOf(PdfPageSlice("", bitmap.copy(Bitmap.Config.ARGB_8888, false)))
+        val plan = buildTwoColumnSplitPlan(bitmap)
+        if (plan.isEmpty()) return listOf(PdfPageSlice("", bitmap.copy(Bitmap.Config.ARGB_8888, false)))
+        return applySplitPlan(bitmap, plan)
+    }
+
+    private enum class BandType {
+        TwoColumn,
+        Span,
+        Other,
+    }
+
+    private data class SplitBand(
+        val y0Ratio: Float,
+        val y1Ratio: Float,
+        val type: BandType,
+    )
+
+    private fun buildTwoColumnSplitPlan(bitmap: Bitmap): List<SplitBand> {
+        if (bitmap.width < 800 || bitmap.height < 800) return emptyList()
+        val sw = minOf(240, bitmap.width)
+        val sh =
+            ((bitmap.height.toFloat() * sw.toFloat()) / bitmap.width.toFloat())
+                .toInt()
+                .coerceAtMost(360)
+                .coerceAtLeast(120)
+        val small = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
+        try {
+            val pixels = IntArray(sw * sh)
+            small.getPixels(pixels, 0, sw, 0, 0, sw, sh)
+
+            fun density(x0: Int, x1: Int, y0: Int, y1: Int): Double {
+                val start = x0.coerceAtLeast(0)
+                val end = x1.coerceAtMost(sw)
+                val top = y0.coerceAtLeast(0)
+                val bottom = y1.coerceAtMost(sh)
+                if (end <= start || bottom <= top) return 1.0
+                var dark = 0
+                var total = 0
+                var y = top
+                while (y < bottom) {
+                    var x = start
+                    while (x < end) {
+                        val c = pixels[y * sw + x]
+                        val r = (c shr 16) and 0xff
+                        val g = (c shr 8) and 0xff
+                        val b = c and 0xff
+                        val v = (r + g + b) / 3
+                        if (v < 245) dark += 1
+                        total += 1
+                        x += 2
+                    }
+                    y += 2
+                }
+                if (total <= 0) return 1.0
+                return dark.toDouble() / total.toDouble()
+            }
+
+            val bandW = (sw * 0.10f).toInt().coerceAtLeast(12).coerceAtMost(48)
+            val midStart = ((sw - bandW) / 2).coerceAtLeast(0)
+            val midEnd = (midStart + bandW).coerceAtMost(sw)
+
+            fun classify(y0: Int, y1: Int): BandType {
+                val center = density(midStart, midEnd, y0, y1)
+                val left = density(0, midStart, y0, y1)
+                val right = density(midEnd, sw, y0, y1)
+                val leftN = density((midStart - bandW * 2).coerceAtLeast(0), (midStart - bandW).coerceAtLeast(0), y0, y1)
+                val rightN = density((midEnd + bandW).coerceAtMost(sw), (midEnd + bandW * 2).coerceAtMost(sw), y0, y1)
+
+                val twoCol = center < 0.006 && leftN > 0.012 && rightN > 0.012
+                if (twoCol) return BandType.TwoColumn
+
+                val span = center > 0.012 && (left > 0.010 || right > 0.010) && (leftN > 0.008 || rightN > 0.008)
+                if (span) return BandType.Span
+
+                return BandType.Other
+            }
+
+            val bandCount = 6
+            val bandH = (sh / bandCount).coerceAtLeast(8)
+            val rawBands = mutableListOf<SplitBand>()
+            var y = 0
+            while (y < sh) {
+                val y1 = (y + bandH).coerceAtMost(sh)
+                rawBands += SplitBand(y.toFloat() / sh.toFloat(), y1.toFloat() / sh.toFloat(), classify(y, y1))
+                y = y1
+            }
+
+            val hasTwoCol = rawBands.any { it.type == BandType.TwoColumn }
+            if (!hasTwoCol) return emptyList()
+
+            val merged = mutableListOf<SplitBand>()
+            for (b in rawBands) {
+                val last = merged.lastOrNull()
+                if (last != null && last.type == b.type) {
+                    merged[merged.lastIndex] = last.copy(y1Ratio = b.y1Ratio)
+                } else {
+                    merged += b
+                }
+            }
+
+            return merged.filter { it.y1Ratio > it.y0Ratio }
+        } finally {
+            small.recycle()
+        }
+    }
+
+    private fun applySplitPlan(bitmap: Bitmap, plan: List<SplitBand>): List<PdfPageSlice> {
+        val w = bitmap.width
+        val h = bitmap.height
+        val mid = (w / 2).coerceAtLeast(1)
+        val out = mutableListOf<PdfPageSlice>()
+        var bandIndex = 0
+        for (seg in plan) {
+            val y0 = (seg.y0Ratio * h.toFloat()).toInt().coerceAtLeast(0).coerceAtMost(h)
+            val y1 = (seg.y1Ratio * h.toFloat()).toInt().coerceAtLeast(0).coerceAtMost(h)
+            val top = minOf(y0, y1)
+            val bottom = maxOf(y0, y1)
+            val segH = (bottom - top).coerceAtLeast(1)
+            val bandView = Bitmap.createBitmap(bitmap, 0, top, w, segH)
+            val band = bandView.copy(Bitmap.Config.ARGB_8888, false)
+            bandView.recycle()
+            bandIndex += 1
+            val segIndex = bandIndex
+            when (seg.type) {
+                BandType.TwoColumn -> {
+                    val leftView = Bitmap.createBitmap(band, 0, 0, mid, segH)
+                    val rightView = Bitmap.createBitmap(band, mid, 0, (w - mid).coerceAtLeast(1), segH)
+                    val left = leftView.copy(Bitmap.Config.ARGB_8888, false)
+                    val right = rightView.copy(Bitmap.Config.ARGB_8888, false)
+                    leftView.recycle()
+                    rightView.recycle()
+                    band.recycle()
+                    out += PdfPageSlice("_${segIndex}L", left)
+                    out += PdfPageSlice("_${segIndex}R", right)
+                }
+                BandType.Span, BandType.Other -> {
+                    out += PdfPageSlice("_${segIndex}S", band)
+                }
+            }
+        }
+        return out
+    }
+
+    private fun writeJpegWhiteBackground(outFile: File, bitmap: Bitmap, quality: Int) {
+        val flattened = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(flattened)
+        canvas.drawColor(Color.WHITE)
+        canvas.drawBitmap(bitmap, 0f, 0f, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        val baos = ByteArrayOutputStream()
+        flattened.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+        flattened.recycle()
+        outFile.outputStream().use { it.write(baos.toByteArray()) }
     }
 
     private fun countPdfPages(file: File): Int {
@@ -886,7 +1173,7 @@ $joined
   "section": "本页所属章节/主题(可空)",
   "main_points": ["要点1","要点2"],
   "methods": ["方法/模型/算法(可空)"],
-  "equations": ["公式/符号解释(可空)。将识别内容转为LaTeX时注意上下标位置，使用^和_并配合花括号：x_{k}, x^{k}"],
+  "equations": ["公式/符号解释(可空)。必须输出可编译的LaTeX（不要加$或$$）。上下标必须用^/_并配合花括号：x_{k}, x^{k}, x^{*}。算子必须带反斜杠：\\sin, \\log, \\max, \\arg\\min, \\det。偏导用\\partial，梯度用\\nabla，分数用\\frac。多行对齐公式用\\begin{aligned}...\\end{aligned}并用\\\\换行、&对齐。"],
   "figures": ["图表/示意图描述(可空)"],
   "citations": ["出现的论文/作者/会议期刊/DOI/链接线索(可空)"],
   "terms": ["术语及简短解释(可空)"],
