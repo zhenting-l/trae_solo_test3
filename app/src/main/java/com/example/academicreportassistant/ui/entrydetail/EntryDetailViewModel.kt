@@ -19,6 +19,7 @@ import android.content.Context
 import android.net.Uri
 import java.io.File
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 class EntryDetailViewModel(private val entryId: String) : ViewModel() {
     private val repo = AppContainer.entryRepository
@@ -82,8 +83,21 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
         _errorMessage.value = null
     }
 
-    fun startAnalysis(context: Context) {
+    fun startAnalysis(
+        context: Context,
+        extraPrompt: String? = null,
+        batchImages: Boolean = false,
+        incremental: Boolean = false,
+    ) {
         viewModelScope.launch {
+            val running =
+                repo.observeEntries()
+                    .map { list -> list.any { (it.status == "QUEUED" || it.status == "PROCESSING") && it.id != entryId } }
+                    .first()
+            if (running) {
+                _errorMessage.value = "当前已有任务在运行（账号频率限制为1），请等待完成或先中断"
+                return@launch
+            }
             val settings = AppContainer.settingsStore.modelSettings.first()
             if (settings.baseUrl.isBlank() || settings.apiKey.isBlank()) {
                 _errorMessage.value = "缺少 baseUrl / apiKey"
@@ -113,7 +127,14 @@ class EntryDetailViewModel(private val entryId: String) : ViewModel() {
                 message = "已加入队列",
                 lastError = null,
             )
-            WorkEnqueuer.enqueueAnalyzeEntry(context, entryId, source = "auto")
+            WorkEnqueuer.enqueueAnalyzeEntry(
+                context = context,
+                entryId = entryId,
+                source = "auto",
+                extraPrompt = extraPrompt?.takeIf { it.isNotBlank() },
+                batchImages = batchImages,
+                incremental = incremental,
+            )
         }
     }
 

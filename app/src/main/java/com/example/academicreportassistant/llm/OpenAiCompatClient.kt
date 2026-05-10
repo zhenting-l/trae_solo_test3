@@ -49,6 +49,27 @@ class OpenAiCompatClient(
         )
     }
 
+    suspend fun visionChatCompletionWithJpegBytesList(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        prompt: String,
+        jpegBytesList: List<ByteArray>,
+    ): String {
+        val urls =
+            jpegBytesList.map { bytes ->
+                val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                "data:image/jpeg;base64,$b64"
+            }
+        return visionChatCompletionWithDataUrls(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            model = model,
+            prompt = prompt,
+            dataUrls = urls,
+        )
+    }
+
     suspend fun visionChatCompletionWithPdfFiles(
         baseUrl: String,
         apiKey: String,

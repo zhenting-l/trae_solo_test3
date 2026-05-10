@@ -8,13 +8,15 @@ plugins {
 android {
     namespace = "com.lzt.summaryofslides"
     compileSdk = 34
+    val appVersionCode = (project.findProperty("APP_VERSION_CODE") as String?)?.toIntOrNull() ?: 1
+    val appVersionName = (project.findProperty("APP_VERSION_NAME") as String?) ?: "1.0"
 
     defaultConfig {
         applicationId = "com.lzt.summaryofslides"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -25,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.MaterialTheme
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 
@@ -70,16 +74,26 @@ fun ShareScreen(
                 }
             }
 
-            LazyColumn(modifier = Modifier.weight(1f)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 if (summariesState.value.isNotEmpty()) {
-                    item { Text("MD总结文档") }
+                    item {
+                        Text(
+                            "MD总结文档",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
                     items(summariesState.value, key = { it.id + "-md" }) { s ->
                         val path = s.summaryMdPath
                         if (!path.isNullOrBlank()) {
                             val checked = selectedSummaryMdIds.contains(s.id)
                             val fileName = File(path).name
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Checkbox(
@@ -94,14 +108,22 @@ fun ShareScreen(
                         }
                     }
 
-                    item { Text("HTML文档") }
+                    item {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "HTML文档",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
                     items(summariesState.value, key = { it.id + "-html" }) { s ->
                         val path = s.summaryHtmlPath
                         if (!path.isNullOrBlank()) {
                             val checked = selectedSummaryHtmlIds.contains(s.id)
                             val fileName = File(path).name
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Checkbox(
@@ -117,13 +139,21 @@ fun ShareScreen(
                     }
                 }
 
-                item { Text("用户上传的文件") }
+                item {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "用户上传的文件",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    )
+                }
                 items(pdfsState.value, key = { it.id }) { pdf ->
                     val key = "pdf:${pdf.id}"
                     val checked = selectedUploadKeys.contains(key)
                     val rawName = pdf.displayName?.ifBlank { null } ?: File(pdf.localPath).name
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(
@@ -142,7 +172,9 @@ fun ShareScreen(
                     val key = "img:${img.id}"
                     val checked = selectedUploadKeys.contains(key)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(

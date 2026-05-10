@@ -8,9 +8,41 @@ object MarkdownTidyUtil {
             .replace("\\\\[", "\$\$")
             .replace("\\\\]", "\$\$")
         md = md.replace(Regex("\\$\\\\\\s*\\n")) { "${'$'}\n" }
+        md = fixInlineMathNewlines(md)
         md = convertTablesToLists(md)
         md = md.replace(Regex("\n{3,}"), "\n\n").trim()
         return md + "\n"
+    }
+
+    private fun fixInlineMathNewlines(md: String): String {
+        val out = StringBuilder(md.length)
+        var i = 0
+        var inInline = false
+        var inBlock = false
+        while (i < md.length) {
+            val c = md[i]
+            if (c == '$') {
+                val isDouble = i + 1 < md.length && md[i + 1] == '$'
+                if (isDouble) {
+                    inBlock = !inBlock
+                    out.append("$$")
+                    i += 2
+                    continue
+                }
+                if (!inBlock) inInline = !inInline
+                out.append('$')
+                i += 1
+                continue
+            }
+            if (c == '\n' && inInline && !inBlock) {
+                out.append(' ')
+                i += 1
+                continue
+            }
+            out.append(c)
+            i += 1
+        }
+        return out.toString()
     }
 
     private fun convertTablesToLists(md: String): String {
@@ -45,7 +77,11 @@ object MarkdownTidyUtil {
 
     private fun isTableRow(line: String): Boolean {
         val t = line.trim()
-        return t.contains('|') && t.length >= 3
+        if (t.length < 3) return false
+        val pipeCount = t.count { it == '|' }
+        if (pipeCount < 2) return false
+        val looksLikeRow = t.startsWith('|') || t.endsWith('|')
+        return looksLikeRow
     }
 
     private fun isTableSeparator(line: String): Boolean {
@@ -59,4 +95,3 @@ object MarkdownTidyUtil {
         return t.split('|').map { it.trim() }
     }
 }
-

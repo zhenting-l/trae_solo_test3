@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,6 +57,7 @@ import com.lzt.summaryofslides.util.createTempCameraFile
 import com.lzt.summaryofslides.util.fileToContentUri
 import com.lzt.summaryofslides.util.openPdf
 import java.io.File
+import androidx.compose.ui.text.input.TextFieldValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,14 +80,27 @@ fun EntryDetailScreen(
     var pendingDeleteImageId by remember { mutableStateOf<String?>(null) }
     var pendingDeletePdfId by remember { mutableStateOf<String?>(null) }
     var previewImageFile by remember { mutableStateOf<File?>(null) }
+    var extraPrompt by remember { mutableStateOf(TextFieldValue("")) }
+    var showExtraPromptDialog by remember { mutableStateOf(false) }
+    var continuousCapture by remember { mutableStateOf(false) }
+    var showAnalysisOptionsDialog by remember { mutableStateOf(false) }
+    var batchImages by remember { mutableStateOf(false) }
+    var incrementalSummary by remember { mutableStateOf(false) }
 
     val takePictureLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
             val file = pendingCameraFile
             if (success && file != null) {
-                vm.importCapturedFile(file)
+                vm.importCapturedFile(file) {
+                    if (continuousCapture) {
+                        val next = createTempCameraFile(context)
+                        pendingCameraFile = next
+                        takePictureLauncher.launch(fileToContentUri(context, next))
+                    }
+                }
             } else {
                 file?.delete()
+                continuousCapture = false
             }
             pendingCameraFile = null
         }
@@ -133,6 +148,7 @@ fun EntryDetailScreen(
             ) {
                 Button(
                     onClick = {
+                        continuousCapture = true
                         val file = createTempCameraFile(context)
                         pendingCameraFile = file
                         takePictureLauncher.launch(fileToContentUri(context, file))
@@ -140,7 +156,7 @@ fun EntryDetailScreen(
                     modifier = Modifier.weight(1f),
                     colors = importBtnColors,
                 ) {
-                    Text("拍照")
+                    Text("连续拍照")
                 }
                 Button(
                     onClick = { pickImagesLauncher.launch("image/*") },
@@ -182,6 +198,19 @@ fun EntryDetailScreen(
             }
 
             Button(
+                onClick = { showExtraPromptDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFB6D8FF),
+                        contentColor = Color.Black,
+                    ),
+            ) {
+                val hint = if (extraPrompt.text.isBlank()) "（未设置）" else "（已设置）"
+                Text("附加提示词$hint")
+            }
+
+            Button(
                 onClick = {
                     val entry = entryState.value
                     val status = entry?.status ?: "-"
@@ -190,7 +219,11 @@ fun EntryDetailScreen(
                     if (status == "QUEUED" || status == "PROCESSING") {
                         vm.cancelAnalysis(context)
                     } else {
-                        vm.startAnalysis(context)
+                        if (summaryCountState.value >= 1) {
+                            incrementalSummary = false
+                        }
+                        batchImages = false
+                        showAnalysisOptionsDialog = true
                     }
                 },
                 enabled =
@@ -213,6 +246,69 @@ fun EntryDetailScreen(
                         else -> "开始分析并生成总结"
                     }
                 Text(text)
+            }
+
+            if (showAnalysisOptionsDialog) {
+                AlertDialog(
+                    onDismissRequest = { showAnalysisOptionsDialog = false },
+                    title = { Text("开始分析选项") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = batchImages, onCheckedChange = { batchImages = it })
+                                Text("一次性输入全部图片")
+                            }
+                            if (summaryCountState.value >= 1) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = incrementalSummary, onCheckedChange = { incrementalSummary = it })
+                                    Text("增量总结（仅分析新增图片）")
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showAnalysisOptionsDialog = false
+                                vm.startAnalysis(
+                                    context = context,
+                                    extraPrompt = extraPrompt.text,
+                                    batchImages = batchImages,
+                                    incremental = incrementalSummary,
+                                )
+                            },
+                        ) { Text("开始") }
+                    },
+                    dismissButton = {
+                        Button(onClick = { showAnalysisOptionsDialog = false }) { Text("取消") }
+                    },
+                )
+            }
+
+            if (showExtraPromptDialog) {
+                AlertDialog(
+                    onDismissRequest = { showExtraPromptDialog = false },
+                    title = { Text("附加提示词（可选）") },
+                    text = {
+                        OutlinedTextField(
+                            value = extraPrompt,
+                            onValueChange = { extraPrompt = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 4,
+                        )
+                    },
+                    confirmButton = {
+                        Button(onClick = { showExtraPromptDialog = false }) { Text("确定") }
+                    },
+                    dismissButton = {
+                        Button(
+                            onClick = {
+                                extraPrompt = TextFieldValue("")
+                                showExtraPromptDialog = false
+                            },
+                        ) { Text("清空") }
+                    },
+                )
             }
 
             if (summaryCountState.value >= 2) {

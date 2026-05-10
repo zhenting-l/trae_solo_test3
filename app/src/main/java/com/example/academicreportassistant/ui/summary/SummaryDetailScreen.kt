@@ -32,6 +32,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class SummaryDetailViewModel(private val summaryId: String) : ViewModel() {
     private val repo = AppContainer.entryRepository
@@ -146,25 +149,11 @@ private fun normalizeStoredMarkdown(raw: String): String {
     if (!fenced.isNullOrBlank()) return fenced
 
     if (!text.startsWith("{")) return raw
-    val idx = text.indexOf("final_summary")
-    if (idx < 0) return raw
-    val segment = text.substring(idx)
-    val marker = Regex("(?m)^\\s*\"?#\\s+").find(segment)
-    if (marker != null) {
-        var md = segment.substring(marker.range.first).trim()
-        if (md.startsWith("\"#")) md = md.drop(1)
-        md = md.removeSuffix("\"")
-        md = md.removeSuffix("}")
-        md = md.removeSuffix("\"")
-        return md.trim()
-    }
-    val hashIndex = segment.indexOf('#')
-    if (hashIndex >= 0) {
-        var md = segment.substring(hashIndex).trim()
-        md = md.removeSuffix("\"")
-        md = md.removeSuffix("}")
-        md = md.removeSuffix("\"")
-        return md.trim()
-    }
+    val mdFromJson =
+        runCatching {
+            val root = Json { ignoreUnknownKeys = true; isLenient = true }.parseToJsonElement(text).jsonObject
+            root["final_summary"]?.jsonPrimitive?.content
+        }.getOrNull()
+    if (!mdFromJson.isNullOrBlank()) return mdFromJson
     return raw
 }

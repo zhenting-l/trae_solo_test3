@@ -82,6 +82,9 @@ interface EntryImageDao {
     @Query("UPDATE entry_images SET displayOrder = :displayOrder WHERE id = :id")
     suspend fun updateDisplayOrder(id: String, displayOrder: Int?)
 
+    @Query("UPDATE entry_images SET localPath = :localPath WHERE id = :id")
+    suspend fun updateLocalPath(id: String, localPath: String)
+
     @Query("DELETE FROM entry_images WHERE id = :id")
     suspend fun deleteById(id: String)
 

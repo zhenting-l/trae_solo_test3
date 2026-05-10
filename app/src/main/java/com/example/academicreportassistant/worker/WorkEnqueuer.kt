@@ -14,18 +14,22 @@ object WorkEnqueuer {
     private const val AnalysisTag = "analysis"
 
     fun cancelAnalyzeEntry(context: Context, entryId: String) {
-        WorkManager.getInstance(context).cancelUniqueWork("analyze-$entryId")
         WorkManager.getInstance(context).cancelAllWorkByTag("entry-$entryId")
+        WorkManager.getInstance(context).cancelUniqueWork("analysis-singleton")
     }
 
     fun cancelAllAnalyses(context: Context) {
         WorkManager.getInstance(context).cancelAllWorkByTag(AnalysisTag)
+        WorkManager.getInstance(context).cancelUniqueWork("analysis-singleton")
     }
 
     fun enqueueAnalyzeEntry(
         context: Context,
         entryId: String,
         source: String? = null,
+        extraPrompt: String? = null,
+        batchImages: Boolean = false,
+        incremental: Boolean = false,
     ) {
         val constraints =
             Constraints.Builder()
@@ -39,11 +43,14 @@ object WorkEnqueuer {
                     workDataOf(
                         "entryId" to entryId,
                         "source" to source,
+                        "extraPrompt" to extraPrompt,
+                        "batchImages" to batchImages,
+                        "incremental" to incremental,
                     ),
                 )
                 .addTag(AnalysisTag)
                 .addTag("entry-$entryId")
                 .build()
-        WorkManager.getInstance(context).enqueueUniqueWork("analyze-$entryId", ExistingWorkPolicy.REPLACE, req)
+        WorkManager.getInstance(context).enqueueUniqueWork("analysis-singleton", ExistingWorkPolicy.KEEP, req)
     }
 }

@@ -36,6 +36,9 @@ class EntryRepository(
     fun observeSlideAnalyses(entryId: String): Flow<List<SlideAnalysisEntity>> =
         db.slideAnalysisDao().observeByEntry(entryId)
 
+    suspend fun getSlideAnalyses(entryId: String): List<SlideAnalysisEntity> =
+        db.slideAnalysisDao().getByEntry(entryId)
+
     fun observeEntryPdfs(entryId: String): Flow<List<EntryPdfEntity>> =
         db.entryPdfDao().observeByEntry(entryId)
 
@@ -131,6 +134,10 @@ class EntryRepository(
 
     suspend fun updateImageDisplay(imageId: String, displayOrder: Int?, displayName: String?) {
         db.entryImageDao().updateDisplay(imageId, displayOrder, displayName)
+    }
+
+    suspend fun updateImageLocalPath(imageId: String, localPath: String) {
+        db.entryImageDao().updateLocalPath(imageId, localPath)
     }
 
     suspend fun updateImageDisplayOrder(imageId: String, displayOrder: Int?) {

@@ -45,6 +45,9 @@ class AnalyzeEntryWorker(
         val settings = AppContainer.settingsStore.modelSettings.first()
         val llm = OpenAiCompatClient()
         val json = Json { ignoreUnknownKeys = true; isLenient = true }
+        val extraPrompt = inputData.getString("extraPrompt")?.trim()?.takeIf { it.isNotBlank() }
+        val batchImages = inputData.getBoolean("batchImages", false)
+        val incremental = inputData.getBoolean("incremental", false)
 
         try {
             val baseUrl = settings.baseUrl.trim()
@@ -133,7 +136,7 @@ class AnalyzeEntryWorker(
                                 baseUrl = baseUrl,
                                 apiKey = apiKey,
                                 model = settings.generalModel,
-                                prompt = pdfMarkdownPrompt(pdfMd),
+                                prompt = withExtraPrompt(pdfMarkdownPrompt(pdfMd), extraPrompt),
                             )
                         parseSummaryPayload(json, finalRaw)
                     }.getOrElse { e ->
@@ -180,6 +183,9 @@ class AnalyzeEntryWorker(
                             generalModel = settings.generalModel,
                             mergeWithPdfs = false,
                             pdfFiles = emptyList(),
+                            extraPrompt = extraPrompt,
+                            batchImages = batchImages,
+                            incrementalBaseSummary = null,
                         )
                     }
                 val mdIndex = repo.getSummaryCount(entryId) + 1
@@ -208,8 +214,11 @@ class AnalyzeEntryWorker(
                 images.map { ImageForAnalysis(it, jpegBytes = null) }
 
             updateProgress(repo, entryId, "PROCESSING", "PRECHECK", 0, imagesForAnalysis.size, "准备开始")
-            repo.clearSlideAnalyses(entryId)
+            if (!incremental) {
+                repo.clearSlideAnalyses(entryId)
+            }
 
+            val baseSummary = if (incremental) repo.getEntry(entryId)?.finalSummary else null
             val payload =
                 analyzeImagesAndMerge(
                     repo = repo,
@@ -223,6 +232,9 @@ class AnalyzeEntryWorker(
                     generalModel = settings.generalModel,
                     mergeWithPdfs = hasImages && hasPdfs,
                     pdfFiles = pdfFiles,
+                    extraPrompt = extraPrompt,
+                    batchImages = batchImages,
+                    incrementalBaseSummary = baseSummary,
                 )
             val shortTitle = payload.shortTitle
             val speakerName = payload.speakerName
@@ -234,8 +246,12 @@ class AnalyzeEntryWorker(
 
             for ((idx, img) in imagesForAnalysis.withIndex()) {
                 val order = idx + 1
-                val displayName = slideNames[order] ?: "第${order}页"
+                val rawName = slideNames[order] ?: "第${order}页"
+                val displayName = normalizeSlideName(rawName)
                 repo.updateImageDisplay(img.entity.id, displayOrder = order, displayName = displayName)
+                renameImageFileIfPossible(repo, entryId, img.entity.id, order, displayName)
+            }
+                renameImageFileIfPossible(repo, entryId, img.entity.id, order, displayName)
             }
 
             updateProgress(repo, entryId, "PROCESSING", "GENERATE_FILE", null, null, "生成Markdown文件")
@@ -350,41 +366,84 @@ class AnalyzeEntryWorker(
         generalModel: String,
         mergeWithPdfs: Boolean,
         pdfFiles: List<File>,
+        extraPrompt: String?,
+        batchImages: Boolean,
+        incrementalBaseSummary: String?,
     ): SummaryPayload {
-        val slideAnalyses = mutableListOf<SlideAnalysisEntity>()
-        val compactForMerge = StringBuilder()
-        for ((idx, img) in imagesForAnalysis.withIndex()) {
-            val page = idx + 1
-            updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", page, imagesForAnalysis.size, "第 $page 页：准备图片")
-            val bytes =
-                img.jpegBytes
-                    ?: withContext(Dispatchers.IO) {
-                        ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath))
+        val existing = repo.getSlideAnalyses(entryId)
+        val existingIds = existing.map { it.imageId }.toSet()
+        val newItems =
+            imagesForAnalysis
+                .mapIndexed { idx, img -> (idx + 1) to img }
+                .filter { (_, img) -> !existingIds.contains(img.entity.id) }
+        val newAnalyses = mutableListOf<SlideAnalysisEntity>()
+        if (newItems.isNotEmpty()) {
+            if (batchImages && newItems.size >= 2) {
+                updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", 0, newItems.size, "准备图片（批量）")
+                val bytesList =
+                    newItems.map { (_, img) ->
+                        img.jpegBytes
+                            ?: withContext(Dispatchers.IO) { ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath)) }
                     }
-            val prompt = slidePrompt(page)
-            updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", page, imagesForAnalysis.size, "第 $page 页：调用视觉模型")
-            val content =
-                llm.visionChatCompletion(
-                    baseUrl = baseUrl,
-                    apiKey = apiKey,
-                    model = visionModel,
-                    prompt = prompt,
-                    jpegBytes = bytes,
-                )
-            updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
-            slideAnalyses +=
-                SlideAnalysisEntity(
-                    id = UUID.randomUUID().toString(),
-                    entryId = entryId,
-                    imageId = img.entity.id,
-                    extractedJson = content,
-                    extractedText = null,
-                    createdAtEpochMs = System.currentTimeMillis(),
-                )
-            compactForMerge.append("Slide ").append(page).append(":\n").append(content).append("\n\n")
+                val prompt = withExtraPrompt(slidePromptBatch(newItems.map { it.first }), extraPrompt)
+                updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", 0, newItems.size, "调用视觉模型（批量）")
+                val content =
+                    llm.visionChatCompletionWithJpegBytesList(
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        model = visionModel,
+                        prompt = prompt,
+                        jpegBytesList = bytesList,
+                    )
+                val parsed = parseBatchSlideJson(json, content)
+                for ((idx, item) in parsed.withIndex()) {
+                    val (page, img) = newItems.getOrNull(idx) ?: continue
+                    newAnalyses +=
+                        SlideAnalysisEntity(
+                            id = UUID.randomUUID().toString(),
+                            entryId = entryId,
+                            imageId = img.entity.id,
+                            extractedJson = item,
+                            extractedText = null,
+                            createdAtEpochMs = System.currentTimeMillis() + page,
+                        )
+                }
+            } else {
+                for ((page, img) in newItems) {
+                    updateProgress(repo, entryId, "PROCESSING", "PREPARE_IMAGE", page, imagesForAnalysis.size, "第 $page 页：准备图片")
+                    val bytes =
+                        img.jpegBytes
+                            ?: withContext(Dispatchers.IO) { ImageTranscodeUtil.loadAndCompressJpeg(File(img.entity.localPath)) }
+                    val prompt = withExtraPrompt(slidePrompt(page), extraPrompt)
+                    updateProgress(repo, entryId, "PROCESSING", "CALL_VISION", page, imagesForAnalysis.size, "第 $page 页：调用视觉模型")
+                    val content =
+                        llm.visionChatCompletion(
+                            baseUrl = baseUrl,
+                            apiKey = apiKey,
+                            model = visionModel,
+                            prompt = prompt,
+                            jpegBytes = bytes,
+                        )
+                    updateProgress(repo, entryId, "PROCESSING", "PARSE_VISION", page, imagesForAnalysis.size, "第 $page 页：保存解析结果")
+                    newAnalyses +=
+                        SlideAnalysisEntity(
+                            id = UUID.randomUUID().toString(),
+                            entryId = entryId,
+                            imageId = img.entity.id,
+                            extractedJson = content,
+                            extractedText = null,
+                            createdAtEpochMs = System.currentTimeMillis(),
+                        )
+                }
+            }
+            repo.saveSlideAnalyses(newAnalyses)
         }
 
-        repo.saveSlideAnalyses(slideAnalyses)
+        val allAnalyses = repo.getSlideAnalyses(entryId)
+        val compactForMerge = StringBuilder()
+        for ((idx, sa) in allAnalyses.withIndex()) {
+            compactForMerge.append("Slide ").append(idx + 1).append(":\n").append(sa.extractedJson.orEmpty()).append("\n\n")
+        }
 
         updateProgress(repo, entryId, "PROCESSING", "MERGE_SUMMARY", null, null, "融合信息与生成总结")
         val finalRaw =
@@ -397,7 +456,7 @@ class AnalyzeEntryWorker(
                         baseUrl = baseUrl,
                         apiKey = apiKey,
                         model = generalModel,
-                        prompt = finalPrompt(compactForMerge.toString()),
+                        prompt = withExtraPrompt(finalPrompt(compactForMerge.toString(), incrementalBaseSummary), extraPrompt),
                     )
                 } else {
                     updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（融合PDF文本）")
@@ -405,7 +464,7 @@ class AnalyzeEntryWorker(
                         baseUrl = baseUrl,
                         apiKey = apiKey,
                         model = generalModel,
-                        prompt = finalPromptWithPdfMarkdown(compactForMerge.toString(), pdfMd),
+                        prompt = withExtraPrompt(finalPromptWithPdfMarkdown(compactForMerge.toString(), pdfMd, incrementalBaseSummary), extraPrompt),
                     )
                 }
             } else {
@@ -413,13 +472,13 @@ class AnalyzeEntryWorker(
                     baseUrl = baseUrl,
                     apiKey = apiKey,
                     model = generalModel,
-                    prompt = finalPrompt(compactForMerge.toString()),
+                    prompt = withExtraPrompt(finalPrompt(compactForMerge.toString(), incrementalBaseSummary), extraPrompt),
                 )
             }
         return parseSummaryPayload(json, finalRaw)
     }
 
-    private fun finalPromptWithPdfMarkdown(allSlides: String, pdfMd: String): String {
+    private fun finalPromptWithPdfMarkdown(allSlides: String, pdfMd: String, baseSummary: String?): String {
         return """
 你将收到同一份幻灯片材料的逐页JSON解析结果，同时还会收到由PDF版式解析器抽取出的Markdown内容。请综合两者，完成信息融合、延伸挖掘，并输出严格JSON（不要包含除JSON以外的任何文本），结构如下：
 {
@@ -432,12 +491,68 @@ class AnalyzeEntryWorker(
   "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
 }
 
+上一次总结（如有）：
+${baseSummary.orEmpty().take(40_000)}
+
 逐页解析如下：
 ${allSlides.take(120_000)}
 
 PDF抽取Markdown如下：
 ${pdfMd.take(120_000)}
 """.trimIndent()
+    }
+
+    private fun finalPrompt(allSlides: String, baseSummary: String?): String {
+        val base = baseSummary?.takeIf { it.isNotBlank() }?.take(40_000).orEmpty()
+        if (base.isBlank()) return finalPrompt(allSlides)
+        return """
+你将收到同一份幻灯片材料的逐页JSON解析结果，以及上一次生成的总结内容。请在保持结构清晰的前提下，对总结进行增量修订：保留原有重要结构，融合新增信息，修正不准确之处。输出严格JSON（不要包含除JSON以外的任何文本），结构如下：
+{
+  "short_title": "为该条目生成一个最适合展示在列表页的短标题（1-3行，可中英文混用，尽量信息密度高）",
+  "speaker_name": "报告人姓名(若无法确定则空字符串)",
+  "speaker_affiliation": "单位/机构(若无法确定则空字符串)",
+  "talk_title": "报告标题(若无法确定则空字符串)",
+  "keywords": ["关键词1","关键词2"],
+  "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用$...$且必须在同一行闭合（不要在$...$中换行），跨行/长公式用$$...$$。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。"
+}
+
+上一次总结：
+$base
+
+逐页解析如下：
+${allSlides.take(120_000)}
+""".trimIndent()
+    }
+
+    private fun withExtraPrompt(prompt: String, extraPrompt: String?): String {
+        if (extraPrompt.isNullOrBlank()) return prompt
+        return prompt + "\n\n用户附加提示词：\n" + extraPrompt.take(4_000)
+    }
+
+    private fun slidePromptBatch(pages: List<Int>): String {
+        val p = pages.joinToString(", ")
+        return """
+你将收到多张幻灯片图片（页码分别为：$p）。请按图片顺序输出严格JSON数组（不要包含除JSON以外的任何文本），数组每个元素结构与单页相同：
+{
+  "page_index": 1,
+  "section": "本页所属章节/主题(可空)",
+  "main_points": ["要点1","要点2"],
+  "methods": ["方法/模型/算法(可空)"],
+  "equations": ["公式/符号解释(可空)"],
+  "figures": ["图表/示意图描述(可空)"],
+  "citations": ["出现的论文/作者/会议期刊/DOI/链接线索(可空)"],
+  "terms": ["术语及简短解释(可空)"],
+  "raw_text": "尽可能完整的可读文本(可空)"
+}
+""".trimIndent()
+    }
+
+    private fun parseBatchSlideJson(json: Json, raw: String): List<String> {
+        val block = extractJsonBlock(raw) ?: raw
+        val el = runCatching { json.parseToJsonElement(block) }.getOrNull() ?: return emptyList()
+        val arr = el as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        return arr.map { it.toString() }
     }
 
     private suspend fun renderPdfToImageFiles(
@@ -573,7 +688,7 @@ ${pdfMd.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用$...$且必须在同一行闭合（不要在$...$中换行），跨行/长公式用$$...$$。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：
@@ -590,7 +705,7 @@ ${allSlides.take(120_000)}
   "speaker_affiliation": "单位/机构(若无法确定则空字符串)",
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用$...$且必须在同一行闭合（不要在$...$中换行），跨行/长公式用$$...$$。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸 6.开放问题与复现建议 7.下一步行动清单）"
 }
 """.trimIndent()
     }
@@ -605,7 +720,7 @@ ${allSlides.take(120_000)}
   "talk_title": "报告标题(若无法确定则空字符串)",
   "keywords": ["关键词1","关键词2"],
   "slide_names": [{"page_index":1,"name":"封面"},{"page_index":2,"name":"目录"}],
-  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX（行内用$...$，块级用$$...$$），不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
+  "final_summary": "详版总结正文（Markdown）。final_summary 必须是合法JSON字符串：换行请用 \\n，双引号请用 \\\"。数学公式使用LaTeX：行内公式用$...$且必须在同一行闭合（不要在$...$中换行），跨行/长公式用$$...$$。上下标必须使用大括号：x_{k}, x^{k}, x^{*}。不要用反引号或代码块包裹公式。为避免解析失败，不要使用Markdown表格（|---|），用标题+列表/段落表达。不要输出思维链，不要输出JSON以外的任何文本。（建议含：1.报告信息 2.整体摘要 3.逐页要点 4.关键术语/概念解释 5.相关工作延伸（列出可能的论文线索/链接） 6.开放问题与复现建议 7.给听众的下一步行动清单）"
 }
 
 逐页解析如下：
@@ -726,6 +841,40 @@ ${md.take(120_000)}
             .trim()
             .take(80)
             .ifBlank { "summary" }
+    }
+
+    private fun normalizeSlideName(raw: String): String {
+        return raw.trim()
+            .replace(Regex("""[\r\n]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .take(24)
+            .ifBlank { "未命名" }
+    }
+
+    private suspend fun renameImageFileIfPossible(
+        repo: com.lzt.summaryofslides.data.repo.EntryRepository,
+        entryId: String,
+        imageId: String,
+        order: Int,
+        displayName: String,
+    ) {
+        val imagesDir = repo.entryImagesDir(entryId)
+        val current = File(imagesDir, "$imageId.jpg")
+        if (!current.exists()) return
+        val stem = sanitizeFileStem(displayName).take(40)
+        val target = File(imagesDir, "${order}-${stem}.jpg")
+        val out =
+            if (target.exists() && target.absolutePath != current.absolutePath) {
+                File(imagesDir, "${order}-${stem}-${imageId.take(4)}.jpg")
+            } else {
+                target
+            }
+        if (out.absolutePath == current.absolutePath) return
+        val ok = runCatching { current.renameTo(out) }.getOrDefault(false)
+        if (ok) {
+            repo.updateImageLocalPath(imageId, out.absolutePath)
+        }
     }
 
     private suspend fun writeUtf8(file: File, text: String) {
