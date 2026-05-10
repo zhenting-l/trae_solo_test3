@@ -28,12 +28,12 @@ data class ExternalPaperMetadata(
         lines += "source=$source"
         lines += "confidence=$confidence"
         if (!title.isNullOrBlank()) lines += "title=$title"
-        if (authors.isNotEmpty()) lines += "authors=${authors.joinToString(\", \")}"
+        if (authors.isNotEmpty()) lines += "authors=${authors.joinToString(", ")}"
         if (!venue.isNullOrBlank()) lines += "venue=$venue"
         if (year != null) lines += "year=$year"
         if (!doi.isNullOrBlank()) lines += "doi=$doi"
         if (!url.isNullOrBlank()) lines += "url=$url"
-        if (keywords.isNotEmpty()) lines += "keywords=${keywords.take(12).joinToString(\", \")}"
+        if (keywords.isNotEmpty()) lines += "keywords=${keywords.take(12).joinToString(", ")}"
         return lines.joinToString("\n")
     }
 }
