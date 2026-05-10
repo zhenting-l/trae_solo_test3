@@ -121,28 +121,30 @@ object MarkdownTidyUtil {
     }
 
     private fun fixLatexSegment(raw: String): String {
-        var s = raw
-        s = s.replace('，', ',').replace('。', '.').replace('：', ':').replace('；', ';')
-        s = s.replace('（', '(').replace('）', ')').replace('【', '[').replace('】', ']')
-        s = s.replace('−', '-')
-        s = s.replace(Regex("""\\hat\{([^}]+)\}\{([^}]+)\}""")) { m ->
-            val a = m.groupValues[1]
-            val idx = m.groupValues[2]
-            "\\hat{$a}_{$idx}"
-        }
-        s = s.replace(Regex("""D\{\\text\{KL\}\}"""), "D_{\\\\text{KL}}")
-        s = s.replace(Regex("""D\{\\mathrm\{KL\}\}"""), "D_{\\\\mathrm{KL}}")
-        s = s.replace(Regex("""\\pi\{(\\theta[^}]*)\}""")) { m ->
-            "\\\\pi_{" + m.groupValues[1] + "}"
-        }
-        s = s.replace(Regex("""\\hat\{A\}\{i,t\}"""), "\\\\hat{A}_{i,t}")
-        s = s.replace(Regex("""\\hat\{A\}\{i, t\}"""), "\\\\hat{A}_{i,t}")
-        s = s.replace(Regex("""\\text\{clip\}"""), "\\\\text{clip}")
-        s = s.replace(Regex("""\\}\{([a-zA-Z]+\s*=\s*[^}]+)\}""")) { m ->
-            "\\\\}_{" + m.groupValues[1] + "}"
-        }
-        s = fixMathbbE(s)
-        return s
+        return runCatching {
+            var s = raw
+            s = s.replace('，', ',').replace('。', '.').replace('：', ':').replace('；', ';')
+            s = s.replace('（', '(').replace('）', ')').replace('【', '[').replace('】', ']')
+            s = s.replace('−', '-')
+            s = s.replace(Regex("""\\hat\{([^}]+)\}\{([^}]+)\}""")) { m ->
+                val a = m.groupValues[1]
+                val idx = m.groupValues[2]
+                "\\hat{$a}_{$idx}"
+            }
+            s = s.replace(Regex("""D\{\\text\{KL\}\}"""), "D_{\\\\text{KL}}")
+            s = s.replace(Regex("""D\{\\mathrm\{KL\}\}"""), "D_{\\\\mathrm{KL}}")
+            s = s.replace(Regex("""\\pi\{(\\theta[^}]*)\}""")) { m ->
+                "\\\\pi_{" + m.groupValues[1] + "}"
+            }
+            s = s.replace(Regex("""\\hat\{A\}\{i,t\}"""), "\\\\hat{A}_{i,t}")
+            s = s.replace(Regex("""\\hat\{A\}\{i, t\}"""), "\\\\hat{A}_{i,t}")
+            s = s.replace(Regex("""\\text\{clip\}"""), "\\\\text{clip}")
+            s = s.replace(Regex("""\Q\}{\E([a-zA-Z]+\s*=\s*[^}]+)\}""")) { m ->
+                "\\\\}_{" + m.groupValues[1] + "}"
+            }
+            s = fixMathbbE(s)
+            s
+        }.getOrDefault(raw)
     }
 
     private fun fixMathbbE(latex: String): String {
