@@ -19,6 +19,7 @@ data class ModelSettings(
     val visionModel: String,
     val enableWebEnrichment: Boolean,
     val preferWebViewMarkdown: Boolean,
+    val pdfOcrFallbackEnabled: Boolean,
 )
 
 class SettingsStore(private val context: Context) {
@@ -30,6 +31,7 @@ class SettingsStore(private val context: Context) {
         val visionModel = stringPreferencesKey("vision_model")
         val enableWebEnrichment = booleanPreferencesKey("enable_web_enrichment")
         val preferWebViewMarkdown = booleanPreferencesKey("prefer_webview_markdown")
+        val pdfOcrFallbackEnabled = booleanPreferencesKey("pdf_ocr_fallback_enabled")
     }
 
     val modelSettings: Flow<ModelSettings> = context.dataStore.data.map { prefs ->
@@ -44,6 +46,7 @@ class SettingsStore(private val context: Context) {
             visionModel = prefs[Keys.visionModel] ?: preset.defaultVisionModel,
             enableWebEnrichment = prefs[Keys.enableWebEnrichment] ?: false,
             preferWebViewMarkdown = prefs[Keys.preferWebViewMarkdown] ?: true,
+            pdfOcrFallbackEnabled = prefs[Keys.pdfOcrFallbackEnabled] ?: true,
         )
     }
 
@@ -63,6 +66,7 @@ class SettingsStore(private val context: Context) {
         visionModel: String? = null,
         enableWebEnrichment: Boolean? = null,
         preferWebViewMarkdown: Boolean? = null,
+        pdfOcrFallbackEnabled: Boolean? = null,
     ) {
         context.dataStore.edit { prefs ->
             if (baseUrl != null) prefs[Keys.baseUrl] = baseUrl
@@ -71,6 +75,7 @@ class SettingsStore(private val context: Context) {
             if (visionModel != null) prefs[Keys.visionModel] = visionModel
             if (enableWebEnrichment != null) prefs[Keys.enableWebEnrichment] = enableWebEnrichment
             if (preferWebViewMarkdown != null) prefs[Keys.preferWebViewMarkdown] = preferWebViewMarkdown
+            if (pdfOcrFallbackEnabled != null) prefs[Keys.pdfOcrFallbackEnabled] = pdfOcrFallbackEnabled
         }
     }
 }

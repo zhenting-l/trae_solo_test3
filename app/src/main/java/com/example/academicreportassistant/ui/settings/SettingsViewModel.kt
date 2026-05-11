@@ -25,6 +25,7 @@ class SettingsViewModel : ViewModel() {
                 visionModel = ModelProviderPreset.ZhiPu.defaultVisionModel,
                 enableWebEnrichment = false,
                 preferWebViewMarkdown = true,
+                pdfOcrFallbackEnabled = true,
             ),
         )
 
@@ -39,6 +40,7 @@ class SettingsViewModel : ViewModel() {
         visionModel: String,
         enableWebEnrichment: Boolean,
         preferWebViewMarkdown: Boolean,
+        pdfOcrFallbackEnabled: Boolean,
     ) {
         viewModelScope.launch {
             store.update(
@@ -48,6 +50,7 @@ class SettingsViewModel : ViewModel() {
                 visionModel = visionModel,
                 enableWebEnrichment = enableWebEnrichment,
                 preferWebViewMarkdown = preferWebViewMarkdown,
+                pdfOcrFallbackEnabled = pdfOcrFallbackEnabled,
             )
         }
     }

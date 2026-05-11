@@ -129,12 +129,24 @@ class AnalyzeEntryWorker(
                 )
                 return Result.failure()
             }
+            if (hasImages && settings.visionModel.contains("ocr", ignoreCase = true)) {
+                repo.updateEntryProgress(
+                    entryId = entryId,
+                    status = "FAILED",
+                    stage = "PRECHECK",
+                    current = null,
+                    total = null,
+                    message = "当前视觉模型为 glm-ocr，不支持幻灯片逐页解析",
+                    lastError = "visionModel=glm-ocr",
+                )
+                return Result.failure()
+            }
 
             if (!hasImages && hasPdfs) {
                 repo.clearSlideAnalyses(entryId)
                 val payload =
                     runCatching {
-                        updateProgress(repo, entryId, "PROCESSING", "PARSE_PDF", null, null, "解析PDF为Markdown")
+                        updateProgress(repo, entryId, "PROCESSING", "OCR_PDF", null, null, "调用glm-ocr解析PDF（layout_parsing）")
                         val pdfMd = parsePdfFilesToMarkdown(baseUrl, apiKey, pdfFiles)
                         val external =
                             if (settings.enableWebEnrichment) {
@@ -171,6 +183,76 @@ class AnalyzeEntryWorker(
                             parseSummaryPayload(json, finalRaw)
                         }
                     }.getOrElse { e ->
+                        val canPdfOcrFallback = settings.pdfOcrFallbackEnabled && isZhiPuForLayoutParsing(baseUrl)
+                        if (canPdfOcrFallback) {
+                            updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF解析失败，回退为逐页OCR解析")
+                            val pageFiles = renderPdfToImageFiles(repo, entryId, pdfFiles)
+                            val parser = ZhiPuDocParser()
+                            val sb = StringBuilder()
+                            for ((idx, file) in pageFiles.withIndex()) {
+                                val current = idx + 1
+                                updateProgress(repo, entryId, "PROCESSING", "OCR_PDF", current, pageFiles.size, "OCR解析（$current/${pageFiles.size}）")
+                                val md =
+                                    runCatching {
+                                        parser.parsePdfToMarkdown(
+                                            baseUrl = baseUrl,
+                                            apiKey = apiKey,
+                                            pdfFile = file,
+                                            startPageId = null,
+                                            endPageId = null,
+                                        )
+                                    }.getOrNull()
+                                if (!md.isNullOrBlank()) {
+                                    sb.append("\n\n").append("## Page ").append(current).append("\n\n").append(md)
+                                }
+                            }
+                            val pdfMd = sb.toString().trim().ifBlank { throw IllegalStateException("OCR解析失败") }
+                            val external =
+                                if (settings.enableWebEnrichment) {
+                                    updateProgress(repo, entryId, "PROCESSING", "ENRICH_WEB", null, null, "联网补充论文信息")
+                                    runCatching { AcademicMetadataEnricher().enrichFromPdfMarkdown(pdfMd) }.getOrNull()
+                                } else {
+                                    null
+                                }
+                            val externalBlock = external?.toPromptBlock()
+                            if (shouldChunkPdfMarkdown(pdfMd)) {
+                                return@getOrElse analyzePdfMarkdownChunked(
+                                    repo = repo,
+                                    llm = llm,
+                                    json = json,
+                                    entryId = entryId,
+                                    baseUrl = baseUrl,
+                                    apiKey = apiKey,
+                                    generalModel = settings.generalModel,
+                                    pdfMd = pdfMd,
+                                    extraPrompt = extraPrompt,
+                                    externalMetadata = externalBlock,
+                                )
+                            }
+                            updateProgress(repo, entryId, "PROCESSING", "CALL_GENERAL", null, null, "调用通用模型（基于OCR文本）")
+                            val finalRaw =
+                                llm.textChatCompletion(
+                                    baseUrl = baseUrl,
+                                    apiKey = apiKey,
+                                    model = settings.generalModel,
+                                    prompt = withExternalMetadata(withExtraPrompt(pdfMarkdownPrompt(pdfMd), extraPrompt), externalBlock),
+                                )
+                            return@getOrElse parseSummaryPayload(json, finalRaw)
+                        }
+
+                        if (settings.visionModel.contains("ocr", ignoreCase = true)) {
+                            repo.updateEntryProgress(
+                                entryId = entryId,
+                                status = "FAILED",
+                                stage = "PARSE_PDF",
+                                current = null,
+                                total = null,
+                                message = "当前baseUrl不支持glm-ocr回退，请使用智谱baseUrl或关闭OCR回退",
+                                lastError = e.message,
+                            )
+                            return Result.failure()
+                        }
+
                         if (settings.visionModel.isBlank()) {
                             repo.updateEntryProgress(
                                 entryId = entryId,
@@ -529,7 +611,7 @@ class AnalyzeEntryWorker(
         updateProgress(repo, entryId, "PROCESSING", "MERGE_SUMMARY", null, null, "融合信息与生成总结")
         val finalRaw =
             if (mergeWithPdfs) {
-                updateProgress(repo, entryId, "PROCESSING", "PARSE_PDF", null, null, "解析PDF为Markdown")
+                updateProgress(repo, entryId, "PROCESSING", "OCR_PDF", null, null, "调用glm-ocr解析PDF（layout_parsing）")
                 val pdfMd = runCatching { parsePdfFilesToMarkdown(baseUrl, apiKey, pdfFiles) }.getOrNull()
                 if (pdfMd.isNullOrBlank()) {
                     updateProgress(repo, entryId, "PROCESSING", "FALLBACK", null, null, "PDF解析失败，回退为仅基于图片总结")
@@ -1261,9 +1343,7 @@ ${allSlides.take(120_000)}
     }
 
     private suspend fun parsePdfFilesToMarkdown(baseUrl: String, apiKey: String, pdfFiles: List<File>): String {
-        val lower = baseUrl.lowercase()
-        val isZhiPu = lower.contains("/api/paas/v4") || lower.contains("/api/coding/paas/v4")
-        if (!isZhiPu) throw IllegalStateException("当前供应商不支持PDF解析")
+        if (!isZhiPuForLayoutParsing(baseUrl)) throw IllegalStateException("当前供应商不支持PDF解析")
         val sb = StringBuilder()
         for ((idx, file) in pdfFiles.withIndex()) {
             val current = idx + 1
@@ -1297,6 +1377,11 @@ ${allSlides.take(120_000)}
             sb.append("\n\n").append("## Document ").append(current).append("\n\n").append(md)
         }
         return sb.toString().trim()
+    }
+
+    private fun isZhiPuForLayoutParsing(baseUrl: String): Boolean {
+        val lower = baseUrl.lowercase()
+        return lower.contains("/api/paas/v4") || lower.contains("/api/coding/paas/v4")
     }
 
     private fun pdfMarkdownPrompt(md: String): String {

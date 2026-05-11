@@ -46,6 +46,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var visionModel by remember { mutableStateOf("") }
     var enableWebEnrichment by remember { mutableStateOf(false) }
     var preferWebViewMarkdown by remember { mutableStateOf(true) }
+    var pdfOcrFallbackEnabled by remember { mutableStateOf(true) }
 
     LaunchedEffect(settings.value) {
         baseUrl = settings.value.baseUrl
@@ -54,6 +55,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         visionModel = settings.value.visionModel
         enableWebEnrichment = settings.value.enableWebEnrichment
         preferWebViewMarkdown = settings.value.preferWebViewMarkdown
+        pdfOcrFallbackEnabled = settings.value.pdfOcrFallbackEnabled
     }
 
     Scaffold(
@@ -159,6 +161,18 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                     }
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("PDF失败时用OCR回退")
+                        Switch(
+                            checked = pdfOcrFallbackEnabled,
+                            onCheckedChange = { pdfOcrFallbackEnabled = it },
+                        )
+                    }
+
                     Button(
                         onClick = {
                             vm.save(
@@ -168,6 +182,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 visionModel = visionModel,
                                 enableWebEnrichment = enableWebEnrichment,
                                 preferWebViewMarkdown = preferWebViewMarkdown,
+                                pdfOcrFallbackEnabled = pdfOcrFallbackEnabled,
                             )
                             onBack()
                         },
