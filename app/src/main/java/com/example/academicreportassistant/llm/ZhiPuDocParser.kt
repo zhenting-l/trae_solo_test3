@@ -37,11 +37,16 @@ class ZhiPuDocParser(
     ): String {
         val apiPrefix = normalizeZhiPuApiPrefix(baseUrl)
         val url = "$apiPrefix/layout_parsing"
+        val maxBytes = if (pdfFile.extension.equals("pdf", ignoreCase = true)) 50L * 1024L * 1024L else 10L * 1024L * 1024L
+        if (pdfFile.length() > maxBytes) {
+            throw IllegalStateException("文件过大：${pdfFile.name}")
+        }
         val b64 = encodeBase64NoWrap(pdfFile)
+        val dataUrl = "${mimePrefix(pdfFile)}$b64"
         val body =
             buildJsonObject {
                 put("model", JsonPrimitive("glm-ocr"))
-                put("file", JsonPrimitive(b64))
+                put("file", JsonPrimitive(dataUrl))
                 if (startPageId != null) put("start_page_id", JsonPrimitive(startPageId))
                 if (endPageId != null) put("end_page_id", JsonPrimitive(endPageId))
             }
@@ -66,6 +71,16 @@ class ZhiPuDocParser(
             }
         val root = json.parseToJsonElement(raw).jsonObject
         return root["md_results"]?.jsonPrimitive?.content ?: throw IllegalStateException("Missing md_results")
+    }
+
+    private fun mimePrefix(file: File): String {
+        val ext = file.extension.lowercase()
+        return when (ext) {
+            "pdf" -> "data:application/pdf;base64,"
+            "png" -> "data:image/png;base64,"
+            "jpg", "jpeg" -> "data:image/jpeg;base64,"
+            else -> "data:application/octet-stream;base64,"
+        }
     }
 
     private suspend fun encodeBase64NoWrap(file: File): String {

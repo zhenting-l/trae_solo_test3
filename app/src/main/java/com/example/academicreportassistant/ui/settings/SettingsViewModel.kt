@@ -29,12 +29,7 @@ class SettingsViewModel : ViewModel() {
             ),
         )
 
-    fun applyPreset(preset: ModelProviderPreset) {
-        viewModelScope.launch { store.applyPreset(preset) }
-    }
-
     fun save(
-        baseUrl: String,
         apiKey: String,
         generalModel: String,
         visionModel: String,
@@ -44,7 +39,6 @@ class SettingsViewModel : ViewModel() {
     ) {
         viewModelScope.launch {
             store.update(
-                baseUrl = baseUrl,
                 apiKey = apiKey,
                 generalModel = generalModel,
                 visionModel = visionModel,

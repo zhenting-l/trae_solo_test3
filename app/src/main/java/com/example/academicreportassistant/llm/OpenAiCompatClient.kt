@@ -246,9 +246,11 @@ class OpenAiCompatClient(
         if (isZhiPuV4) {
             return "$trimmed/chat/completions"
         }
-        val hasV1 = lower.endsWith("/v1")
-        val prefix = if (hasV1) trimmed else "$trimmed/v1"
-        return "$prefix/chat/completions"
+        val isZhiPuCodingV4 = lower.endsWith("/api/coding/paas/v4") || lower.contains("/api/coding/paas/v4/")
+        if (isZhiPuCodingV4) {
+            return "$trimmed/chat/completions"
+        }
+        throw IllegalStateException("Unsupported baseUrl for GLM: $trimmed")
     }
 
     private fun extractAssistantContent(rawJson: String): String {

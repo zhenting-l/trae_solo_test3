@@ -24,8 +24,6 @@ data class ModelSettings(
 
 class SettingsStore(private val context: Context) {
     private object Keys {
-        val providerPreset = stringPreferencesKey("provider_preset")
-        val baseUrl = stringPreferencesKey("base_url")
         val apiKey = stringPreferencesKey("api_key")
         val generalModel = stringPreferencesKey("general_model")
         val visionModel = stringPreferencesKey("vision_model")
@@ -35,12 +33,10 @@ class SettingsStore(private val context: Context) {
     }
 
     val modelSettings: Flow<ModelSettings> = context.dataStore.data.map { prefs ->
-        val preset = prefs[Keys.providerPreset]?.let { raw ->
-            ModelProviderPreset.entries.firstOrNull { it.name == raw }
-        } ?: ModelProviderPreset.ZhiPu
+        val preset = ModelProviderPreset.ZhiPu
         ModelSettings(
             providerPreset = preset,
-            baseUrl = prefs[Keys.baseUrl] ?: preset.defaultBaseUrl,
+            baseUrl = preset.defaultBaseUrl,
             apiKey = prefs[Keys.apiKey] ?: "",
             generalModel = prefs[Keys.generalModel] ?: preset.defaultGeneralModel,
             visionModel = prefs[Keys.visionModel] ?: preset.defaultVisionModel,
@@ -52,15 +48,12 @@ class SettingsStore(private val context: Context) {
 
     suspend fun applyPreset(preset: ModelProviderPreset) {
         context.dataStore.edit { prefs ->
-            prefs[Keys.providerPreset] = preset.name
-            prefs[Keys.baseUrl] = preset.defaultBaseUrl
             prefs[Keys.generalModel] = preset.defaultGeneralModel
             prefs[Keys.visionModel] = preset.defaultVisionModel
         }
     }
 
     suspend fun update(
-        baseUrl: String? = null,
         apiKey: String? = null,
         generalModel: String? = null,
         visionModel: String? = null,
@@ -69,7 +62,6 @@ class SettingsStore(private val context: Context) {
         pdfOcrFallbackEnabled: Boolean? = null,
     ) {
         context.dataStore.edit { prefs ->
-            if (baseUrl != null) prefs[Keys.baseUrl] = baseUrl
             if (apiKey != null) prefs[Keys.apiKey] = apiKey
             if (generalModel != null) prefs[Keys.generalModel] = generalModel
             if (visionModel != null) prefs[Keys.visionModel] = visionModel

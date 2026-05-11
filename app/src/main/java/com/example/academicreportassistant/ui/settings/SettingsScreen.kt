@@ -1,7 +1,6 @@
 package com.lzt.summaryofslides.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,8 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.lzt.summaryofslides.settings.ModelProviderPreset
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,8 +35,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     val vm: SettingsViewModel = viewModel()
     val settings = vm.settings.collectAsState()
 
-    var providerExpanded by remember { mutableStateOf(false) }
-    var baseUrl by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var generalModel by remember { mutableStateOf("") }
     var visionModel by remember { mutableStateOf("") }
@@ -49,7 +43,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     var pdfOcrFallbackEnabled by remember { mutableStateOf(true) }
 
     LaunchedEffect(settings.value) {
-        baseUrl = settings.value.baseUrl
         apiKey = settings.value.apiKey
         generalModel = settings.value.generalModel
         visionModel = settings.value.visionModel
@@ -84,36 +77,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text("模型调用设置", style = MaterialTheme.typography.titleMedium)
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = { providerExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("供应商预设：${settings.value.providerPreset.displayName}")
-                        }
-                        DropdownMenu(
-                            expanded = providerExpanded,
-                            onDismissRequest = { providerExpanded = false },
-                        ) {
-                            for (preset in ModelProviderPreset.entries) {
-                                DropdownMenuItem(
-                                    text = { Text(preset.displayName) },
-                                    onClick = {
-                                        providerExpanded = false
-                                        vm.applyPreset(preset)
-                                    },
-                                )
-                            }
-                        }
-                    }
-
-                    TextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
-                        label = { Text("baseUrl") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
                     TextField(
                         value = apiKey,
                         onValueChange = { apiKey = it },
@@ -176,7 +139,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                     Button(
                         onClick = {
                             vm.save(
-                                baseUrl = baseUrl,
                                 apiKey = apiKey,
                                 generalModel = generalModel,
                                 visionModel = visionModel,
